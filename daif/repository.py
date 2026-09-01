@@ -13,7 +13,18 @@ from sqlalchemy.orm import Session
 
 from .clock import now_riyadh
 from .knowledge import KnowledgeBase
-from .models import AuditLog, Fact, Guest, HandoffRecord, Message, StaffUser, Tenant, Ticket
+from .models import (
+    AuditLog,
+    Fact,
+    Guest,
+    HandoffRecord,
+    Invoice,
+    Message,
+    StaffUser,
+    Tenant,
+    Ticket,
+    UsageCounter,
+)
 
 
 # --- الفنادق ---------------------------------------------------------------
@@ -33,6 +44,60 @@ def tenant_by_phone_number_id(session: Session, phone_number_id: str) -> Tenant 
     return session.scalar(
         select(Tenant).where(
             Tenant.wa_phone_number_id == phone_number_id, Tenant.active.is_(True)
+        )
+    )
+
+
+def list_tenants(session: Session, *, include_inactive: bool = True) -> list[Tenant]:
+    """كل الفنادق — استعلام على مستوى المنصة لا مستوى المشترك."""
+    stmt = select(Tenant)
+    if not include_inactive:
+        stmt = stmt.where(Tenant.active.is_(True))
+    return list(session.scalars(stmt.order_by(Tenant.created_at.desc())))
+
+
+def platform_stats(session: Session, period: str) -> dict:
+    """مؤشرات المنصة كلها: عدد المشتركين، الإيراد الشهري المتكرر، الاستهلاك."""
+    from .plans import get as get_plan
+
+    tenants = list_tenants(session)
+    active = [t for t in tenants if t.active]
+    mrr = sum(get_plan(t.plan).monthly for t in active if t.plan != "trial")
+
+    usage = session.execute(
+        select(
+            func.coalesce(func.sum(UsageCounter.inbound), 0),
+            func.coalesce(func.sum(UsageCounter.outbound), 0),
+        ).where(UsageCounter.period == period)
+    ).one()
+
+    unpaid = session.scalar(
+        select(func.count(Invoice.id)).where(Invoice.status == "issued")
+    ) or 0
+
+    by_plan: dict[str, int] = {}
+    for tenant in active:
+        by_plan[tenant.plan] = by_plan.get(tenant.plan, 0) + 1
+
+    return {
+        "tenants": len(tenants),
+        "active": len(active),
+        "trials": sum(1 for t in active if t.plan == "trial"),
+        "mrr": mrr,
+        "inbound": int(usage[0]),
+        "outbound": int(usage[1]),
+        "unpaid_invoices": unpaid,
+        "by_plan": by_plan,
+    }
+
+
+def platform_admin_by_email(session: Session, email: str):
+    from .models import PlatformAdmin
+
+    return session.scalar(
+        select(PlatformAdmin).where(
+            func.lower(PlatformAdmin.email) == email.strip().lower(),
+            PlatformAdmin.active.is_(True),
         )
     )
 

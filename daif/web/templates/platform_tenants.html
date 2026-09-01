@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+{% block title %}لوحة المنصة{% endblock %}
+{% block body %}
+<div class="layout">
+  <main class="main">
+    <header class="topbar">
+      <h1>لوحة المنصة</h1>
+      <div class="row right">
+        <span class="badge">{{ admin.email }}</span>
+        <form method="post" action="/platform/logout">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="btn ghost sm" type="submit">خروج</button>
+        </form>
+      </div>
+      <div class="sub">فترة {{ period }}</div>
+    </header>
+
+    <div class="content">
+      {% if request.query_params.get('ok') %}<div class="alert ok">تم</div>{% endif %}
+      {% if request.query_params.get('err') == 'duplicate' %}<div class="alert error">المعرّف أو البريد مستخدم مسبقًا</div>{% endif %}
+      {% if request.query_params.get('err') == 'weak' %}<div class="alert error">كلمة المرور قصيرة (٨ محارف على الأقل)</div>{% endif %}
+
+      <div class="grid kpis">
+        <div class="card kpi accent hero">
+          <div class="label">الإيراد الشهري المتكرر</div>
+          <div class="value">{{ money(stats.mrr) }}<span class="unit">ر.س</span></div>
+          <div class="hint">{{ stats.active - stats.trials }} مشترك مدفوع</div>
+        </div>
+        <div class="card kpi">
+          <div class="label">الفنادق النشطة</div>
+          <div class="value">{{ stats.active }}</div>
+          <div class="hint">من {{ stats.tenants }}</div>
+        </div>
+        <div class="card kpi">
+          <div class="label">تجارب جارية</div>
+          <div class="value">{{ stats.trials }}</div>
+        </div>
+        <div class="card kpi">
+          <div class="label">رسائل صادرة</div>
+          <div class="value">{{ '{:,}'.format(stats.outbound) }}</div>
+        </div>
+        <div class="card kpi {{ 'warn' if stats.unpaid_invoices }}">
+          <div class="label">فواتير غير محصّلة</div>
+          <div class="value">{{ stats.unpaid_invoices }}</div>
+        </div>
+      </div>
+
+      <section class="card">
+        <div class="card-body">
+          <details class="inline-form">
+            <summary>+ تهيئة فندق جديد</summary>
+            <form method="post" action="/platform/tenants/create">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <div class="form-grid">
+                <div class="field">
+                  <label>المعرّف <span class="opt">بالإنجليزية، بلا مسافات</span></label>
+                  <input type="text" name="slug" dir="ltr" required pattern="[a-z0-9\-]+">
+                </div>
+                <div class="field">
+                  <label>اسم الفندق</label>
+                  <input type="text" name="name" required>
+                </div>
+                <div class="field">
+                  <label>بريد المالك</label>
+                  <input type="email" name="owner_email" dir="ltr" required>
+                </div>
+                <div class="field">
+                  <label>كلمة مرور المالك <span class="opt">٨ محارف فأكثر</span></label>
+                  <input type="text" name="owner_password" dir="ltr" required minlength="8">
+                </div>
+                <div class="field">
+                  <label>الباقة</label>
+                  <select name="plan">
+                    {% for p in catalog %}<option value="{{ p.code }}">{{ p.name_ar }} — {{ p.monthly_sar }} ر.س</option>{% endfor %}
+                  </select>
+                </div>
+                <div class="field">
+                  <label>عدد الغرف</label>
+                  <input type="text" name="rooms" dir="ltr" value="0">
+                </div>
+                <div class="field span-2">
+                  <label class="check">
+                    <input type="checkbox" name="seed_kb" value="1" checked>
+                    ابدأ بقاعدة معرفة نموذجية <span class="opt">— تُنشأ معطّلة حتى يراجعها المدير</span>
+                  </label>
+                </div>
+              </div>
+              <div class="form-actions"><button class="btn primary" type="submit">تهيئة</button></div>
+            </form>
+          </details>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>المشتركون</h2>
+          <span class="badge">{{ rows | length }}</span>
+          <form method="post" action="/platform/invoices/run" class="right">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="btn sm" type="submit">إصدار فواتير الشهر المنقضي</button>
+          </form>
+        </div>
+        <div class="card-body tight">
+          <div class="table-wrap">
+            <table>
+              <thead><tr>
+                <th>الفندق</th><th>الباقة</th><th class="num">الغرف</th>
+                <th class="num">الحصة</th><th>الحالة</th><th class="num">إجراءات</th>
+              </tr></thead>
+              <tbody>
+              {% for row in rows %}
+              <tr>
+                <form method="post" action="/platform/tenants/{{ row.tenant.id }}/update">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <td>
+                  <div class="cell-main">{{ row.tenant.name }}</div>
+                  <div class="cell-sub mono">{{ row.tenant.slug }} · {{ row.tenant.city }}</div>
+                </td>
+                <td>
+                  <select name="plan" style="min-width:150px">
+                    {% for p in catalog %}
+                    <option value="{{ p.code }}" {{ 'selected' if p.code == row.tenant.plan }}>{{ p.name_ar }}</option>
+                    {% endfor %}
+                  </select>
+                </td>
+                <td class="num">
+                  <input type="text" name="rooms" dir="ltr" value="{{ row.tenant.rooms }}" style="max-width:74px">
+                  {% if row.rooms_exceeded %}<div class="cell-sub" style="color:var(--red)">فوق الحد</div>{% endif %}
+                </td>
+                <td class="num">
+                  <span class="badge {{ 'amber' if row.quota.exceeded else '' }}">{{ row.quota.percent }}%</span>
+                  {% if row.quota.exceeded %}
+                  <div class="cell-sub">+{{ money(row.quota.overage_amount) }} ر.س</div>
+                  {% endif %}
+                </td>
+                <td class="nowrap">
+                  <label class="check">
+                    <input type="checkbox" name="active" value="1" {{ 'checked' if row.tenant.active }}>
+                    نشط
+                  </label>
+                </td>
+                <td class="num"><button class="btn sm primary" type="submit">حفظ</button></td>
+                </form>
+              </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+{% endblock %}

@@ -11,6 +11,7 @@ import yaml
 
 from .clock import parse_date
 from .db import init_db, session_scope
+from .billing import format_sar  # noqa: F401
 from .knowledge import KnowledgeBase
 from .models import Fact, StaffUser, Tenant
 from .repository import staff_by_email, tenant_by_slug
@@ -67,6 +68,48 @@ def cmd_create_user(args: argparse.Namespace) -> int:
             )
         )
         print(f"أُنشئ المستخدم {args.email} في «{tenant.name}».")
+    return 0
+
+
+def cmd_create_admin(args: argparse.Namespace) -> int:
+    """حساب مشغّل المنصة — منفصل تمامًا عن موظفي الفنادق."""
+    from .models import PlatformAdmin
+    from .repository import platform_admin_by_email
+
+    init_db()
+    password = args.password or getpass.getpass("كلمة المرور: ")
+    if len(password) < 12:
+        print("كلمة مرور مشغّل المنصة يجب ألا تقل عن ١٢ محرفًا.", file=sys.stderr)
+        return 1
+    with session_scope() as session:
+        if platform_admin_by_email(session, args.email):
+            print("البريد مستخدم مسبقًا.", file=sys.stderr)
+            return 1
+        session.add(
+            PlatformAdmin(
+                email=args.email.strip().lower(),
+                name=args.name or "",
+                password_hash=hash_password(password),
+            )
+        )
+        print(f"أُنشئ مشغّل المنصة {args.email}.")
+    return 0
+
+
+def cmd_invoices(args: argparse.Namespace) -> int:
+    """إصدار فواتير فترة محددة لكل الفنادق النشطة."""
+    from . import billing
+    from .repository import list_tenants
+
+    init_db()
+    period = args.period or billing.previous_period(billing.period_of())
+    with session_scope() as session:
+        issued = 0
+        for tenant in list_tenants(session, include_inactive=False):
+            invoice = billing.issue_invoice(session, tenant, period)
+            issued += 1
+            print(f"  {tenant.slug:16} {invoice.number}  {billing.format_sar(invoice.total)} ر.س")
+        print(f"أُصدرت {issued} فاتورة لفترة {period}.")
     return 0
 
 
@@ -140,6 +183,16 @@ def build_parser() -> argparse.ArgumentParser:
     user.add_argument("--role", default="owner", choices=["owner", "manager", "staff"])
     user.add_argument("--locale", default="ar")
     user.set_defaults(func=cmd_create_user)
+
+    admin = sub.add_parser("create-admin", help="إضافة مشغّل للمنصة")
+    admin.add_argument("email")
+    admin.add_argument("--name", default="")
+    admin.add_argument("--password", default="")
+    admin.set_defaults(func=cmd_create_admin)
+
+    inv = sub.add_parser("invoices", help="إصدار فواتير فترة")
+    inv.add_argument("--period", default="", help="مثال 2026-09؛ الافتراضي الشهر المنقضي")
+    inv.set_defaults(func=cmd_invoices)
 
     kb = sub.add_parser("import-kb", help="استيراد قاعدة معرفة من ملف YAML")
     kb.add_argument("hotel")

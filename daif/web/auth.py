@@ -12,22 +12,28 @@ COOKIE_NAME = "daif_session"
 _MAX_AGE = 60 * 60 * 12  # اثنتا عشرة ساعة — طول وردية
 
 
-def _serializer() -> URLSafeSerializer:
-    secret = get_settings().dashboard_secret
-    if not secret:
-        # بيئة تطوير بلا سرّ: مفتاح عشوائي لكل تشغيل، فتنتهي الجلسات عند إعادة التشغيل.
-        secret = _dev_secret()
-    return URLSafeSerializer(secret, salt="daif-dashboard")
-
-
 _DEV_SECRET: str | None = None
 
 
-def _dev_secret() -> str:
+def signing_secret() -> str:
+    """سرّ توقيع الجلسات.
+
+    بلا `DAIF_DASHBOARD_SECRET` نولّد مفتاحًا واحدًا لعمر العملية — لا مفتاحًا
+    لكل نداء. المفتاح المتغيّر في كل نداء يعني أن التوقيع لا يُقرأ أبدًا، فلا
+    يستطيع أحد الدخول أصلًا. الجلسات تنتهي عند إعادة التشغيل، وهذا مقبول في
+    التطوير وحده.
+    """
     global _DEV_SECRET
+    secret = get_settings().dashboard_secret
+    if secret:
+        return secret
     if _DEV_SECRET is None:
         _DEV_SECRET = secrets.token_urlsafe(32)
     return _DEV_SECRET
+
+
+def _serializer() -> URLSafeSerializer:
+    return URLSafeSerializer(signing_secret(), salt="daif-dashboard")
 
 
 def issue(staff_id: int, tenant_id: int) -> str:

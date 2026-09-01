@@ -271,6 +271,25 @@ class HandoffRecord(Base):
     resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class PlatformAdmin(Base):
+    """مشغّل المنصة — حساب منفصل تمامًا عن موظفي الفنادق.
+
+    لا يشارك جلسة ولا كوكي مع لوحة الفندق: اختراق حساب فندق واحد يجب ألا
+    يمنح شيئًا على مستوى المنصة.
+    """
+
+    __tablename__ = "platform_admins"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(String(200), unique=True)
+    name: Mapped[str] = mapped_column(String(120), default="")
+    password_hash: Mapped[str] = mapped_column(String(255))
+    locale: Mapped[str] = mapped_column(String(8), default="ar")
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class UsageCounter(Base):
     """عدّاد استهلاك شهري لكل فندق — أساس الفوترة والتقارير."""
 

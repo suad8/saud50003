@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}لوحة المنصة{% endblock %}
+{% block body %}
+<div class="auth-wrap">
+  <div class="card auth-card">
+    <div class="card-body">
+      <div class="auth-head">
+        <div class="brand-mark" style="background:linear-gradient(140deg,#1f3b52,#2f6f8f)">ض</div>
+        <h1>لوحة المنصة</h1>
+        <span class="sub">تشغيل المشتركين والفوترة</span>
+      </div>
+      {% if error %}<div class="alert error">بيانات الدخول غير صحيحة</div>{% endif %}
+      <form method="post" action="/platform/login" class="stack">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="field">
+          <label for="email">البريد الإلكتروني</label>
+          <input id="email" name="email" type="email" required dir="ltr" autocomplete="username">
+        </div>
+        <div class="field">
+          <label for="password">كلمة المرور</label>
+          <input id="password" name="password" type="password" required dir="ltr" autocomplete="current-password">
+        </div>
+        <button class="btn primary" type="submit" style="width:100%">دخول</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -116,6 +116,11 @@ TICKET_TYPE_LABELS = {
 }
 
 
+from .platform import setup as _platform_setup  # noqa: E402
+
+app.include_router(_platform_setup(templates))
+
+
 @app.on_event("startup")
 def _startup() -> None:
     init_db()
