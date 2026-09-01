@@ -21,12 +21,28 @@ from .plans import format_sar
 # ترويسة BOM حتى يفتح إكسل العربية بترميز صحيح بدل الطلاسم
 _BOM = "\ufeff"
 
+# محارف تجعل إكسل يعامل الخلية كصيغة تُنفَّذ لا كنص يُعرض
+_FORMULA_STARTERS = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _safe_cell(value) -> str:
+    """يحصّن الخلية من حقن الصيغ.
+
+    نص التحويلات يأتي من النزيل نفسه. لو بدأ بـ`=` فتحه إكسل كصيغة قابلة
+    للتنفيذ — فيصير تصدير تقرير بريء بابًا لتنفيذ أمر على جهاز المدير.
+    الفاصلة العليا تجعل إكسل يعرضه نصًا، وتختفي عند القراءة.
+    """
+    text = "" if value is None else str(value)
+    if text.startswith(_FORMULA_STARTERS):
+        return "'" + text
+    return text
+
 
 def _to_csv(header: list[str], rows: list[list]) -> str:
     buffer = io.StringIO()
     writer = csv.writer(buffer)
     writer.writerow(header)
-    writer.writerows(rows)
+    writer.writerows([_safe_cell(cell) for cell in row] for row in rows)
     return _BOM + buffer.getvalue()
 
 

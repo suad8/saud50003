@@ -28,7 +28,7 @@ from ..repository import (
     staff_by_email,
     tenant_by_slug,
 )
-from ..security import hash_password, verify_password
+from ..security import hash_password, verify_password_constant_time
 from . import auth, csrf
 from .i18n import LOCALES, get_translator
 
@@ -106,7 +106,7 @@ def setup(templates) -> APIRouter:
             return render(request, "platform_login.html", {"t": t, "error": True}, 429)
 
         admin = platform_admin_by_email(session, email)
-        if admin is None or not verify_password(password, admin.password_hash):
+        if not verify_password_constant_time(password, admin.password_hash if admin else None):
             logger.warning("محاولة دخول فاشلة للوحة المنصة: %s", email)
             return render(request, "platform_login.html", {"t": t, "error": True}, 401)
 

@@ -12,7 +12,12 @@ from .assistant import Assistant, AssistantResult
 from .clock import now_riyadh, parse_iso8601
 from .context import GuestContext
 from .models import Guest, HandoffRecord, Message, Tenant, Ticket
-from .repository import conversation_history, get_or_create_guest, load_knowledge_base
+from .repository import (
+    conversation_history,
+    get_or_create_guest,
+    load_knowledge_base,
+    message_already_seen,
+)
 
 logger = logging.getLogger("daif.service")
 
@@ -68,8 +73,16 @@ def handle_inbound(
     assistant: Assistant,
     wa_message_id: str = "",
     low_confidence_input: bool = False,
-) -> Outcome:
-    """يعالج رسالة نزيل واردة من أولها لآخرها."""
+) -> Outcome | None:
+    """يعالج رسالة نزيل واردة من أولها لآخرها.
+
+    يعيد None إن كانت الرسالة معالَجة سلفًا — إعادة إرسال من Meta لا رسالة
+    جديدة من النزيل.
+    """
+    if message_already_seen(session, tenant.id, wa_message_id):
+        logger.info("رسالة مكررة من %s تُجوهلت: %s", wa_id, wa_message_id)
+        return None
+
     guest = get_or_create_guest(session, tenant.id, wa_id)
     guest.last_seen_at = now_riyadh()
 

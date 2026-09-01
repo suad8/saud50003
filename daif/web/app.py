@@ -64,7 +64,7 @@ from ..repository import (
     stats,
     tenant_by_phone_number_id,
 )
-from ..security import hash_password, verify_password
+from ..security import hash_password, verify_password_constant_time
 from ..service import build_context, handle_inbound
 from ..whatsapp import client_for_tenant, parse_webhook, verify_signature, verify_subscription
 from . import auth, csrf
@@ -310,7 +310,8 @@ def login_submit(
         )
 
     user = staff_by_email(session, email)
-    if user is None or not verify_password(password, user.password_hash):
+    # زمن ثابت: بريد مجهول يستهلك نفس زمن بريد معروف بكلمة مرور خاطئة
+    if not verify_password_constant_time(password, user.password_hash if user else None):
         return _template(
             request,
             "login.html",
@@ -1042,6 +1043,8 @@ def _process_inbound(inbound) -> None:
                 wa_message_id=inbound.message_id,
                 low_confidence_input=inbound.low_confidence,
             )
+            if outcome is None:
+                return  # إعادة إرسال من Meta — عولجت سلفًا
             if inbound.profile_name and not outcome.guest.name:
                 outcome.guest.name = inbound.profile_name
 

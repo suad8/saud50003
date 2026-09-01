@@ -345,6 +345,23 @@ def list_messages(
     return list(session.scalars(stmt.order_by(Message.created_at.desc()).limit(limit)))
 
 
+def message_already_seen(session: Session, tenant_id: int, wa_message_id: str) -> bool:
+    """هل عولجت هذه الرسالة من قبل؟
+
+    Meta تعيد إرسال الـwebhook عند أي تأخّر أو خطأ شبكة. بلا هذا الفحص يستلم
+    النزيل ردّين وتُفتح تذكرتان لطلب واحد — ويُحتسب استهلاكه مرتين.
+    """
+    if not wa_message_id:
+        return False
+    return session.scalar(
+        select(func.count(Message.id)).where(
+            Message.tenant_id == tenant_id,
+            Message.wa_message_id == wa_message_id,
+            Message.direction == "in",
+        )
+    ) > 0
+
+
 def conversation_history(
     session: Session,
     tenant_id: int,
