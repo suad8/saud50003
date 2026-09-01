@@ -42,6 +42,7 @@
           </td>
           <td class="nowrap num">
             <form method="post" action="/tickets/{{ tk.id }}/status" class="row" style="gap:5px; justify-content:flex-end">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <select name="status" onchange="this.form.submit()">
                 {% for s in ['open','in_progress','done','cancelled'] %}
                 <option value="{{ s }}" {{ 'selected' if tk.status == s }}>{{ t('status_' ~ s) }}</option>

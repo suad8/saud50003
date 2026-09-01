@@ -36,6 +36,7 @@
           <td class="nowrap num">
             {% if h.status == 'open' %}
             <form method="post" action="/handoffs/{{ h.id }}/resolve">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <button class="btn sm" type="submit">{{ t('resolve') }}</button>
             </form>
             {% else %}<span class="badge green">{{ t('resolved') }}</span>{% endif %}

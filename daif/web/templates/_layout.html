@@ -13,18 +13,20 @@
     </div>
 
     <nav class="nav">
+      {# الصفحة لا تظهر في القائمة إن كان الدور لا يملك صلاحية عرضها #}
       {% set items = [
-        ('overview',      '/',              'nav_overview',      0),
-        ('knowledge',     '/knowledge',     'nav_knowledge',     0),
-        ('guests',        '/guests',        'nav_guests',        unverified_guests),
-        ('tickets',       '/tickets',       'nav_tickets',       open_tickets),
-        ('handoffs',      '/handoffs',      'nav_handoffs',      open_handoffs),
-        ('conversations', '/conversations', 'nav_conversations', 0),
-        ('gaps',          '/gaps',          'nav_gaps',          0),
-        ('simulator',     '/simulator',     'nav_simulator',     0),
-        ('settings',      '/settings',      'nav_settings',      0),
+        ('overview',      '/',              'nav_overview',      0,                 'view.overview'),
+        ('knowledge',     '/knowledge',     'nav_knowledge',     0,                 'view.knowledge'),
+        ('guests',        '/guests',        'nav_guests',        unverified_guests, 'view.guests'),
+        ('tickets',       '/tickets',       'nav_tickets',       open_tickets,      'view.tickets'),
+        ('handoffs',      '/handoffs',      'nav_handoffs',      open_handoffs,     'view.handoffs'),
+        ('conversations', '/conversations', 'nav_conversations', 0,                 'view.conversations'),
+        ('gaps',          '/gaps',          'nav_gaps',          0,                 'view.gaps'),
+        ('simulator',     '/simulator',     'nav_simulator',     0,                 'view.simulator'),
+        ('billing',       '/billing',       'nav_billing',       0,                 'view.billing'),
+        ('settings',      '/settings',      'nav_settings',      0,                 'view.settings'),
       ] %}
-      {% for key, href, label, count in items %}
+      {% for key, href, label, count, permission in items if can(permission) %}
       <a href="{{ href }}" class="{{ 'active' if page == key }}">
         {{ icon(key) }}<span>{{ t(label) }}</span>
         {%- if count %}<span class="badge-count">{{ count }}</span>{% endif -%}
@@ -43,6 +45,7 @@
         {{ user.email }}
       </div>
       <form method="post" action="/logout">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <button class="btn ghost sm" type="submit">{{ icon('logout') }} {{ t('logout') }}</button>
       </form>
     </div>

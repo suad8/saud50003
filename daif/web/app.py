@@ -8,18 +8,32 @@ from dataclasses import replace
 from datetime import date
 from pathlib import Path
 
-from fastapi import BackgroundTasks, Depends, FastAPI, Form, Query, Request, Response
+from fastapi import (
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+)
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
+from .. import authz
 from ..assistant import Assistant
 from ..clock import now_riyadh, parse_date
 from ..config import get_settings
+from ..crypto import decrypt, encrypt
 from ..db import get_session, init_db, session_scope
 from ..escalation import build_payload, notify
+from .. import billing
 from ..knowledge import KnowledgeError
+from ..plans import CATALOG, FEATURE_NAMES, format_sar, get as get_plan
+from ..ratelimit import LOGIN, WEBHOOK, limiter
 from ..models import Fact, Guest, HandoffRecord, StaffUser, Tenant, Ticket
 from ..repository import (
     audit,
@@ -42,7 +56,7 @@ from ..repository import (
 from ..security import verify_password
 from ..service import build_context, handle_inbound
 from ..whatsapp import client_for_tenant, parse_webhook, verify_signature, verify_subscription
-from . import auth
+from . import auth, csrf
 from .i18n import LOCALES, Translator, get_translator
 
 logger = logging.getLogger("daif.web")
@@ -50,8 +64,41 @@ logger = logging.getLogger("daif.web")
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
-app = FastAPI(title="ضيف — Daif", docs_url=None, redoc_url=None)
+# اعتمادية CSRF تُطبَّق على كل المسارات؛ تتجاهل الآمنة منها والـwebhook.
+app = FastAPI(
+    title="ضيف — Daif",
+    docs_url=None,
+    redoc_url=None,
+    dependencies=[Depends(csrf.guard)],
+)
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+
+# الخطوط من Google Fonts، وكل ما عداها من أصل التطبيق نفسه.
+_CSP = (
+    "default-src 'self'; "
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+    "font-src 'self' https://fonts.gstatic.com; "
+    "img-src 'self' data:; "
+    "script-src 'self'; "
+    "form-action 'self'; "
+    "frame-ancestors 'none'; "
+    "base-uri 'none'"
+)
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    """ترويسات أمان على كل رد."""
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "same-origin")
+    response.headers.setdefault("Content-Security-Policy", _CSP)
+    if request.url.scheme == "https":
+        response.headers.setdefault(
+            "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
+        )
+    return response
 
 _assistant = Assistant()
 
@@ -116,6 +163,36 @@ def _login_redirect() -> RedirectResponse:
     return RedirectResponse("/login", status_code=303)
 
 
+# صلاحية العرض المطلوبة لكل صفحة — الفحص في مكان واحد لا في كل مسار.
+PAGE_PERMISSION: dict[str, str] = {
+    "overview": authz.VIEW_OVERVIEW,
+    "guests": authz.VIEW_GUESTS,
+    "knowledge": authz.VIEW_KNOWLEDGE,
+    "tickets": authz.VIEW_TICKETS,
+    "handoffs": authz.VIEW_HANDOFFS,
+    "conversations": authz.VIEW_CONVERSATIONS,
+    "gaps": authz.VIEW_GAPS,
+    "simulator": authz.VIEW_SIMULATOR,
+    "settings": authz.VIEW_SETTINGS,
+    "billing": authz.VIEW_BILLING,
+}
+
+
+def _require(principal: Principal, permission: str) -> None:
+    """يمنع ما لا يملكه الدور. الصلاحية تُمنح صراحةً وما عداها ممنوع."""
+    if not authz.can(principal.user.role, permission):
+        raise HTTPException(status_code=403, detail="لا تملك صلاحية هذا الإجراء")
+
+
+def _template(request: Request, name: str, context: dict, status_code: int = 200):
+    """يبني الرد ويثبّت رمز حماية النماذج."""
+    token = csrf.token_for(request)
+    context["csrf_token"] = token
+    response = templates.TemplateResponse(request, name, context, status_code=status_code)
+    csrf.attach(request, response, token)
+    return response
+
+
 def _render(
     request: Request,
     session: Session,
@@ -124,7 +201,10 @@ def _render(
     page: str,
     **context,
 ) -> HTMLResponse:
-    """يجمع سياق القالب المشترك (الترجمة، عدّادات القائمة، المستخدم)."""
+    """يجمع سياق القالب المشترك، ويفحص صلاحية عرض الصفحة."""
+    required = PAGE_PERMISSION.get(page)
+    if required:
+        _require(principal, required)
     base = {
         "t": principal.t,
         "locales": LOCALES,
@@ -138,7 +218,8 @@ def _render(
         "flash_kind": "ok",
     }
     base.update(context)
-    return templates.TemplateResponse(request, template, base)
+    base["can"] = lambda permission: authz.can(principal.user.role, permission)
+    return _template(request, template, base)
 
 
 # ---------------------------------------------------------------------------
@@ -148,9 +229,7 @@ def _render(
 @app.get("/login", response_class=HTMLResponse)
 def login_form(request: Request) -> HTMLResponse:
     t = get_translator(_locale_for(request, None))
-    return templates.TemplateResponse(
-        request, "login.html", {"t": t, "locales": LOCALES, "error": False}
-    )
+    return _template(request, "login.html", {"t": t, "locales": LOCALES, "error": False})
 
 
 @app.post("/login")
@@ -160,15 +239,31 @@ def login_submit(
     password: str = Form(...),
     session: Session = Depends(get_session),
 ) -> Response:
+    # التخمين المتكرر لكلمة المرور محدود بالعنوان وبالبريد معًا.
+    client_ip = request.client.host if request.client else "?"
+    allowed = limiter.hit(f"login:{client_ip}", LOGIN) and limiter.hit(
+        f"login:{email.strip().lower()}", LOGIN
+    )
+    t = get_translator(_locale_for(request, None))
+    if not allowed:
+        logger.warning("تجاوز محاولات الدخول من %s", client_ip)
+        return _template(
+            request,
+            "login.html",
+            {"t": t, "locales": LOCALES, "error": True, "email": email, "throttled": True},
+            status_code=429,
+        )
+
     user = staff_by_email(session, email)
     if user is None or not verify_password(password, user.password_hash):
-        t = get_translator(_locale_for(request, None))
-        return templates.TemplateResponse(
+        return _template(
             request,
             "login.html",
             {"t": t, "locales": LOCALES, "error": True, "email": email},
             status_code=401,
         )
+    # دخول ناجح يمسح العدّاد حتى لا يُعاقب المستخدم الشرعي.
+    limiter.reset(f"login:{email.strip().lower()}")
     response = RedirectResponse("/", status_code=303)
     response.set_cookie(auth.COOKIE_NAME, auth.issue(user.id, user.tenant_id), **auth.cookie_kwargs())
     return response
@@ -259,6 +354,7 @@ async def knowledge_create(
 ) -> Response:
     if principal is None:
         return _login_redirect()
+    _require(principal, authz.WRITE_KNOWLEDGE)
     form = await request.form()
     data = _fact_fields({**form, "seasons": form.getlist("seasons")})
     key = (form.get("key") or "").strip() or next_fact_key(session, principal.tenant.id)
@@ -281,6 +377,7 @@ async def knowledge_update(
 ) -> Response:
     if principal is None:
         return _login_redirect()
+    _require(principal, authz.WRITE_KNOWLEDGE)
     fact = session.get(Fact, fact_id)
     # حاجز العزل: لا يُعدَّل سجل لا يخص فندق الموظف.
     if fact is None or fact.tenant_id != principal.tenant.id:
@@ -303,6 +400,7 @@ def knowledge_delete(
 ) -> Response:
     if principal is None:
         return _login_redirect()
+    _require(principal, authz.WRITE_KNOWLEDGE)
     fact = session.get(Fact, fact_id)
     if fact is not None and fact.tenant_id == principal.tenant.id:
         audit(session, principal.tenant.id, principal.user.email, "fact.delete", entity="fact", entity_id=fact.key)
@@ -351,6 +449,7 @@ def guest_update(
 ) -> Response:
     if principal is None:
         return _login_redirect()
+    _require(principal, authz.WRITE_GUESTS)
     guest = session.get(Guest, guest_id)
     if guest is None or guest.tenant_id != principal.tenant.id:
         return RedirectResponse("/guests", status_code=303)
@@ -397,6 +496,7 @@ def ticket_status(
 ) -> Response:
     if principal is None:
         return _login_redirect()
+    _require(principal, authz.WRITE_TICKETS)
     ticket = session.get(Ticket, ticket_id)
     if ticket is not None and ticket.tenant_id == principal.tenant.id:
         if status in ("open", "in_progress", "done", "cancelled"):
@@ -430,6 +530,7 @@ def handoff_resolve(
 ) -> Response:
     if principal is None:
         return _login_redirect()
+    _require(principal, authz.WRITE_HANDOFFS)
     record = session.get(HandoffRecord, handoff_id)
     if record is not None and record.tenant_id == principal.tenant.id:
         record.status = "resolved"
@@ -476,6 +577,31 @@ def gaps_page(
     return _render(
         request, session, principal, "gaps.html", "gaps",
         gaps=knowledge_gaps(session, principal.tenant.id),
+    )
+
+
+# ---------------------------------------------------------------------------
+# الفوترة
+# ---------------------------------------------------------------------------
+
+@app.get("/billing", response_class=HTMLResponse)
+def billing_page(
+    request: Request,
+    session: Session = Depends(get_session),
+    principal: Principal | None = Depends(current_principal),
+) -> Response:
+    if principal is None:
+        return _login_redirect()
+    tenant = principal.tenant
+    return _render(
+        request, session, principal, "billing.html", "billing",
+        plan=get_plan(tenant.plan),
+        quota=billing.quota(session, tenant),
+        invoices=billing.list_invoices(session, tenant.id),
+        catalog=[p for p in CATALOG.values() if p.code != "trial" or tenant.plan == "trial"],
+        feature_names=FEATURE_NAMES,
+        rooms_exceeded=billing.rooms_exceeded(tenant),
+        money=format_sar,
     )
 
 
@@ -553,6 +679,7 @@ def settings_save(
 ) -> Response:
     if principal is None:
         return _login_redirect()
+    _require(principal, authz.WRITE_SETTINGS)
     tenant = principal.tenant
     tenant.name = name.strip() or tenant.name
     if season in ("normal", "ramadan", "hajj"):
@@ -577,6 +704,7 @@ def settings_seasons(
 ) -> Response:
     if principal is None:
         return _login_redirect()
+    _require(principal, authz.WRITE_SETTINGS)
     tenant = principal.tenant
     tenant.season_auto = bool(season_auto)
     tenant.ramadan_start = parse_date(ramadan_start)
@@ -598,11 +726,12 @@ def settings_whatsapp(
 ) -> Response:
     if principal is None:
         return _login_redirect()
+    _require(principal, authz.WRITE_WHATSAPP)
     tenant = principal.tenant
     tenant.wa_phone_number_id = wa_phone_number_id.strip()
-    # حقل فارغ يعني «لا تغيّر الرمز المحفوظ»
+    # حقل فارغ يعني «لا تغيّر الرمز المحفوظ». الرمز يُخزَّن مشفّرًا دائمًا.
     if wa_access_token.strip():
-        tenant.wa_access_token = wa_access_token.strip()
+        tenant.wa_access_token = encrypt(wa_access_token.strip())
     audit(session, tenant.id, principal.user.email, "settings.whatsapp")
     return RedirectResponse("/settings?ok=1", status_code=303)
 
@@ -639,6 +768,11 @@ def webhook_verify(request: Request) -> Response:
 @app.post("/webhook/whatsapp")
 async def webhook_receive(request: Request, background: BackgroundTasks) -> Response:
     """يستقبل الرسائل. يردّ 200 فورًا ويعالج في الخلفية."""
+    client_ip = request.client.host if request.client else "?"
+    if not limiter.hit(f"webhook:{client_ip}", WEBHOOK):
+        logger.warning("تجاوز معدّل نداءات webhook من %s", client_ip)
+        return PlainTextResponse("rate limited", status_code=429)
+
     body = await request.body()
     signature = request.headers.get("x-hub-signature-256")
     if not verify_signature(body, signature, get_settings().wa_app_secret):
@@ -682,7 +816,7 @@ def _process_inbound(inbound) -> None:
 
             reply_text = outcome.reply_text
             escalate = outcome.escalate
-            tenant_token = tenant.wa_access_token
+            tenant_token = decrypt(tenant.wa_access_token)
             phone_id = tenant.wa_phone_number_id
             escalation_url = tenant.escalation_webhook
             escalation_payload = (

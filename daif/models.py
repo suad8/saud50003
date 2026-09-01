@@ -68,9 +68,13 @@ class Tenant(Base):
     wa_access_token: Mapped[str] = mapped_column(Text, default="")
 
     # --- اشتراك ---
-    plan: Mapped[str] = mapped_column(String(32), default="basic")
+    plan: Mapped[str] = mapped_column(String(32), default="trial")
     rooms: Mapped[int] = mapped_column(Integer, default=0)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    trial_ends_at: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    billing_status: Mapped[str] = mapped_column(String(16), default="active")  # active|past_due|suspended
+    billing_email: Mapped[str] = mapped_column(String(200), default="")
+    vat_number: Mapped[str] = mapped_column(String(32), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     facts: Mapped[list["Fact"]] = relationship(back_populates="tenant", cascade="all, delete-orphan")
@@ -265,6 +269,62 @@ class HandoffRecord(Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
     resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class UsageCounter(Base):
+    """عدّاد استهلاك شهري لكل فندق — أساس الفوترة والتقارير."""
+
+    __tablename__ = "usage_counters"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "period", name="uq_usage_tenant_period"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), index=True)
+    period: Mapped[str] = mapped_column(String(7), index=True)  # 2026-09
+
+    inbound: Mapped[int] = mapped_column(Integer, default=0)
+    outbound: Mapped[int] = mapped_column(Integer, default=0)
+    tokens_in: Mapped[int] = mapped_column(Integer, default=0)
+    tokens_out: Mapped[int] = mapped_column(Integer, default=0)
+    tickets: Mapped[int] = mapped_column(Integer, default=0)
+    handoffs: Mapped[int] = mapped_column(Integer, default=0)
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now
+    )
+
+
+class Invoice(Base):
+    """فاتورة شهرية. كل المبالغ بالهللات — لا أرقام عائمة في المال."""
+
+    __tablename__ = "invoices"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "period", name="uq_invoice_tenant_period"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), index=True)
+    number: Mapped[str] = mapped_column(String(64), unique=True)
+    period: Mapped[str] = mapped_column(String(7), index=True)
+    plan_code: Mapped[str] = mapped_column(String(32))
+
+    subscription_amount: Mapped[int] = mapped_column(Integer, default=0)
+    overage_messages: Mapped[int] = mapped_column(Integer, default=0)
+    overage_amount: Mapped[int] = mapped_column(Integer, default=0)
+    subtotal: Mapped[int] = mapped_column(Integer, default=0)
+    vat_amount: Mapped[int] = mapped_column(Integer, default=0)
+    total: Mapped[int] = mapped_column(Integer, default=0)
+
+    status: Mapped[str] = mapped_column(String(16), default="issued")  # issued|paid|void
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    due_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    paid_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # حقول الفاتورة الضريبية المبسّطة
+    seller_name: Mapped[str] = mapped_column(String(200), default="")
+    seller_vat: Mapped[str] = mapped_column(String(32), default="")
+    zatca_qr: Mapped[str] = mapped_column(Text, default="")
 
 
 class AuditLog(Base):

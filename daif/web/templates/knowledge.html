@@ -6,6 +6,7 @@
 
 {% macro fact_form(action, fact=None, submit_label='') %}
 <form method="post" action="{{ action }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <div class="form-grid">
     <div class="field">
       <label>{{ t('fact_key') }}</label>
@@ -110,6 +111,7 @@
             </details>
             <form method="post" action="/knowledge/{{ f.id }}/delete" style="display:inline"
                   onsubmit="return confirm('{{ t('confirm_delete') }}')">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <button class="btn danger sm" type="submit">{{ t('delete') }}</button>
             </form>
           </td>

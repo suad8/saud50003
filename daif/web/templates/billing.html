@@ -1,0 +1,118 @@
+{% extends "_layout.html" %}
+{% block title %}{{ t('nav_billing') }}{% endblock %}
+{% block heading %}{{ t('billing_title') }}{% endblock %}
+{% block subtitle %}{% endblock %}
+
+{% block content %}
+<div class="grid halves">
+  <section class="card">
+    <div class="card-head">
+      <h2>{{ t('current_plan') }}</h2>
+      <span class="badge accent">{{ plan.name_ar if t.code == 'ar' else plan.name_en }}</span>
+      {% if tenant.plan == 'trial' and tenant.trial_ends_at %}
+      <span class="badge amber">{{ t('trial_ends') }} {{ tenant.trial_ends_at }}</span>
+      {% endif %}
+    </div>
+    <div class="card-body stack">
+      <div class="kpi" style="padding:0">
+        <div class="label">{{ t('quota_used') }}</div>
+        <div class="value">{{ '{:,}'.format(quota.used) }}<span class="unit">{{ t('quota_of') }} {{ '{:,}'.format(quota.included) }}</span></div>
+      </div>
+      <span class="bar-track" style="height:11px">
+        <span class="bar-fill" style="width: {{ [quota.percent, 100] | min }}%;
+              {% if quota.exceeded %}background: var(--amber){% endif %}"></span>
+      </span>
+
+      {% if quota.exceeded %}
+      <div class="alert info">
+        <strong>{{ t('overage') }}:</strong>
+        {{ '{:,}'.format(quota.overage_messages) }} × {{ money(plan.overage) }} {{ t('riyal') }}
+        = <strong>{{ money(quota.overage_amount) }} {{ t('riyal') }}</strong>
+        <div style="margin-top:5px">{{ t('overage_note') }}</div>
+      </div>
+      {% elif quota.near_limit %}
+      <div class="alert info">{{ t('overage_note') }}</div>
+      {% endif %}
+
+      {% if rooms_exceeded %}
+      <div class="alert error">{{ t('rooms_exceeded') }} — {{ tenant.rooms }} / {{ plan.max_rooms }}</div>
+      {% endif %}
+
+      <table>
+        <tbody>
+          <tr><td class="muted">{{ t('plan_rooms') }}</td>
+              <td class="num">{{ '∞' if plan.unlimited_rooms else plan.max_rooms }}</td></tr>
+          <tr><td class="muted">{{ t('plan_messages') }}</td>
+              <td class="num">{{ '{:,}'.format(plan.included_messages) }}</td></tr>
+          <tr><td class="muted">{{ t('plan_overage') }}</td>
+              <td class="num">{{ money(plan.overage) }} {{ t('riyal') }}</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><h2>{{ t('upgrade') }}</h2></div>
+    <div class="card-body tight">
+      <table>
+        <thead><tr>
+          <th>{{ t('current_plan') }}</th><th class="num">{{ t('riyal') }}/شهر</th>
+          <th class="num">{{ t('plan_rooms') }}</th><th class="num">{{ t('plan_messages') }}</th>
+        </tr></thead>
+        <tbody>
+        {% for p in catalog %}
+        <tr {% if p.code == tenant.plan %}style="background:var(--accent-soft)"{% endif %}>
+          <td>
+            <div class="cell-main">{{ p.name_ar if t.code == 'ar' else p.name_en }}</div>
+            <div class="chips" style="margin-top:4px">
+              {% for f in p.features %}<span class="chip">{{ feature_names.get(f, f) }}</span>{% endfor %}
+            </div>
+          </td>
+          <td class="num cell-main">{{ p.monthly_sar }}</td>
+          <td class="num">{{ '∞' if p.unlimited_rooms else p.max_rooms }}</td>
+          <td class="num">{{ '{:,}'.format(p.included_messages) }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<section class="card">
+  <div class="card-head">
+    <h2>{{ t('invoices') }}</h2>
+    <span class="muted right" style="font-size:.8rem">{{ t('zatca_note') }}</span>
+  </div>
+  <div class="card-body tight">
+    {% if invoices %}
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>{{ t('invoice_number') }}</th><th>{{ t('invoice_period') }}</th>
+          <th class="num">{{ t('overage') }}</th><th class="num">{{ t('invoice_vat') }}</th>
+          <th class="num">{{ t('invoice_total') }}</th><th>{{ t('invoice_status') }}</th>
+          <th>{{ t('invoice_due') }}</th>
+        </tr></thead>
+        <tbody>
+        {% for inv in invoices %}
+        <tr>
+          <td class="nowrap mono cell-main">{{ inv.number }}</td>
+          <td class="nowrap mono">{{ inv.period }}</td>
+          <td class="num">{{ money(inv.overage_amount) }}</td>
+          <td class="num muted">{{ money(inv.vat_amount) }}</td>
+          <td class="num cell-main">{{ money(inv.total) }} {{ t('riyal') }}</td>
+          <td class="nowrap">
+            {% set cls = {'paid':'green','issued':'amber','void':''} %}
+            <span class="badge {{ cls.get(inv.status,'') }}">{{ t('status_' ~ inv.status) }}</span>
+          </td>
+          <td class="nowrap num muted">{{ inv.due_at.strftime('%Y-%m-%d') if inv.due_at else '—' }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}<div class="empty">{{ t('no_data') }}</div>{% endif %}
+  </div>
+</section>
+{% endblock %}

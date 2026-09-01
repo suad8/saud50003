@@ -24,6 +24,7 @@
         {% for g in guests %}
         <tr>
           <form method="post" action="/guests/{{ g.id }}/update">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <td class="nowrap mono cell-main">{{ g.wa_id }}</td>
           <td><input type="text" name="name" value="{{ g.name }}" style="min-width:120px"></td>
           <td>

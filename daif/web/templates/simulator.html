@@ -7,6 +7,7 @@
 <section class="card">
   <div class="card-body">
     <form method="post" action="/simulator">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <div class="form-grid">
         <div class="field span-2">
           <label>{{ t('simulator_message') }}</label>

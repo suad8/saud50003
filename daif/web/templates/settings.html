@@ -8,6 +8,7 @@
   <div class="card-head"><h2>{{ t('settings_operations') }}</h2></div>
   <div class="card-body">
     <form method="post" action="/settings">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <div class="form-grid">
         <div class="field span-2">
           <label>{{ t('hotel_name') }}</label>
@@ -47,6 +48,7 @@
   </div>
   <div class="card-body">
     <form method="post" action="/settings/seasons">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <div class="form-grid">
         <div class="field span-2">
           <label class="check">
@@ -83,6 +85,7 @@
   <div class="card-head"><h2>{{ t('settings_whatsapp') }}</h2></div>
   <div class="card-body">
     <form method="post" action="/settings/whatsapp">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <div class="form-grid">
         <div class="field">
           <label>{{ t('wa_phone_number_id') }}</label>
@@ -102,6 +105,7 @@
   <div class="card-head"><h2>{{ t('interface_language') }}</h2></div>
   <div class="card-body">
     <form method="post" action="/settings/locale" class="row">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <select name="locale" style="max-width:240px">
         {% for code, loc in locales.items() %}
         <option value="{{ code }}" {{ 'selected' if user.locale == code }}>{{ loc.name }}</option>

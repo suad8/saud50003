@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 
 from sqlalchemy.orm import Session
 
+from . import billing
 from .assistant import Assistant, AssistantResult
 from .clock import now_riyadh, parse_iso8601
 from .context import GuestContext
@@ -154,6 +155,18 @@ def handle_inbound(
             guest_text=text,
         )
         session.add(handoff)
+
+    # قياس الاستخدام: أساس الفوترة، ويُسجَّل بعد اكتمال المعالجة لا قبلها.
+    billing.record(
+        session,
+        tenant.id,
+        inbound=1,
+        outbound=1,
+        tokens_in=result.usage.input_tokens + result.usage.cache_read_tokens,
+        tokens_out=result.usage.output_tokens,
+        tickets=len(tickets),
+        handoffs=1 if handoff is not None else 0,
+    )
 
     if result.violations:
         logger.warning(
