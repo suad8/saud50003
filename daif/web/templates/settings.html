@@ -1,0 +1,74 @@
+{% extends "_layout.html" %}
+{% block title %}{{ t('nav_settings') }}{% endblock %}
+{% block heading %}{{ t('settings_title') }}{% endblock %}
+{% block subtitle %}{% endblock %}
+
+{% block content %}
+<section class="card">
+  <div class="card-head"><h2>{{ t('settings_operations') }}</h2></div>
+  <div class="card-body">
+    <form method="post" action="/settings">
+      <div class="form-grid">
+        <div class="field span-2">
+          <label>{{ t('hotel_name') }}</label>
+          <input type="text" name="name" required value="{{ tenant.name }}">
+        </div>
+        <div class="field">
+          <label>{{ t('season') }}</label>
+          <select name="season">
+            {% for s in ['normal','ramadan','hajj'] %}
+            <option value="{{ s }}" {{ 'selected' if tenant.season == s }}>{{ t('season_' ~ s) }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label>{{ t('hk_window') }}</label>
+          <input type="text" name="hk_window" dir="ltr" required value="{{ tenant.hk_window }}" placeholder="08:00-16:00">
+        </div>
+        <div class="field">
+          <label>{{ t('desk_status') }}</label>
+          <select name="desk_status">
+            {% for d in ['staffed','thin','unstaffed'] %}
+            <option value="{{ d }}" {{ 'selected' if tenant.desk_status == d }}>{{ t('desk_' ~ d) }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="form-actions"><button class="btn primary" type="submit">{{ t('save') }}</button></div>
+    </form>
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-head"><h2>{{ t('settings_whatsapp') }}</h2></div>
+  <div class="card-body">
+    <form method="post" action="/settings/whatsapp">
+      <div class="form-grid">
+        <div class="field">
+          <label>{{ t('wa_phone_number_id') }}</label>
+          <input type="text" name="wa_phone_number_id" dir="ltr" value="{{ tenant.wa_phone_number_id }}">
+        </div>
+        <div class="field">
+          <label>{{ t('wa_access_token') }}</label>
+          <input type="password" name="wa_access_token" dir="ltr" placeholder="{{ '••••••••' if tenant.wa_access_token else '' }}">
+        </div>
+      </div>
+      <div class="form-actions"><button class="btn primary" type="submit">{{ t('save') }}</button></div>
+    </form>
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-head"><h2>{{ t('interface_language') }}</h2></div>
+  <div class="card-body">
+    <form method="post" action="/settings/locale" class="row">
+      <select name="locale" style="max-width:240px">
+        {% for code, loc in locales.items() %}
+        <option value="{{ code }}" {{ 'selected' if user.locale == code }}>{{ loc.name }}</option>
+        {% endfor %}
+      </select>
+      <button class="btn primary" type="submit">{{ t('save') }}</button>
+    </form>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,35 @@
+{% extends "_layout.html" %}
+{% block title %}{{ t('nav_gaps') }}{% endblock %}
+{% block heading %}{{ t('gaps_title') }}{% endblock %}
+{% block subtitle %}{{ t('gaps_intro') }}{% endblock %}
+
+{% block content %}
+<section class="card">
+  <div class="card-body tight">
+    {% if gaps %}
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>{{ t('handoff_guest_text') }}</th>
+          <th class="num">{{ t('gap_count') }}</th>
+          <th class="num">{{ t('actions') }}</th>
+        </tr></thead>
+        <tbody>
+        {% for text, count in gaps %}
+        <tr>
+          <td class="cell-main">{{ text }}</td>
+          <td class="num"><span class="badge {{ 'amber' if count > 2 }}">{{ count }}</span></td>
+          <td class="num nowrap">
+            <a class="btn sm primary" href="/knowledge?from_gap={{ text | urlencode }}">
+              {{ t('create_fact_from_gap') }}
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}<div class="empty">{{ t('no_data') }}</div>{% endif %}
+  </div>
+</section>
+{% endblock %}

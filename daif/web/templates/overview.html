@@ -1,0 +1,108 @@
+{% extends "_layout.html" %}
+{% block title %}{{ t('nav_overview') }}{% endblock %}
+{% block heading %}{{ t('nav_overview') }}{% endblock %}
+{% block subtitle %}{{ t('last_days', days=stats.days) }}{% endblock %}
+
+{% block content %}
+<div class="grid kpis">
+  <div class="card kpi accent hero">
+    <div class="label">{{ t('kpi_automation') }}</div>
+    <div class="value">{{ stats.automation_rate }}<span class="unit">%</span></div>
+    <div class="hint">{{ stats.answered }} / {{ stats.outbound }}</div>
+  </div>
+  <div class="card kpi">
+    <div class="label">{{ t('kpi_inbound') }}</div>
+    <div class="value">{{ stats.inbound }}</div>
+  </div>
+  <div class="card kpi {{ 'warn' if stats.open_handoffs }}">
+    <div class="label">{{ t('kpi_open_handoffs') }}</div>
+    <div class="value">{{ stats.open_handoffs }}</div>
+    <div class="hint">{{ stats.handoffs }} {{ t('last_days', days=stats.days) }}</div>
+  </div>
+  <div class="card kpi {{ 'warn' if stats.open_tickets }}">
+    <div class="label">{{ t('kpi_open_tickets') }}</div>
+    <div class="value">{{ stats.open_tickets }}</div>
+  </div>
+  <div class="card kpi">
+    <div class="label">{{ t('kpi_latency') }}</div>
+    <div class="value">{{ (stats.avg_latency_ms / 1000) | round(1) }}<span class="unit">s</span></div>
+  </div>
+  <div class="card kpi">
+    <div class="label">{{ t('kpi_cache') }}</div>
+    <div class="value">{{ cache_rate }}<span class="unit">%</span></div>
+    <div class="hint" dir="ltr">{{ '{:,}'.format(stats.cache_read_tokens) }} tokens</div>
+  </div>
+  <div class="card kpi">
+    <div class="label">{{ t('kpi_facts') }}</div>
+    <div class="value">{{ fact_count }}</div>
+  </div>
+</div>
+
+<div class="grid halves">
+  <section class="card">
+    <div class="card-head"><h2>{{ t('languages_title') }}</h2></div>
+    <div class="card-body">
+      {% if stats.languages %}
+      <div class="bars">
+        {% set top = stats.languages[0][1] %}
+        {% for code, count in stats.languages %}
+        <div class="bar-row">
+          <span>{{ language_names.get(code, code) }}</span>
+          <span class="bar-track"><span class="bar-fill" style="width: {{ (count / top * 100) | round }}%"></span></span>
+          <span class="n">{{ count }}</span>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}<div class="empty">{{ t('no_data') }}</div>{% endif %}
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><h2>{{ t('handoff_reasons_title') }}</h2></div>
+    <div class="card-body">
+      {% if stats.handoff_reasons %}
+      <div class="bars">
+        {% set top = stats.handoff_reasons[0][1] %}
+        {% for reason, count in stats.handoff_reasons %}
+        <div class="bar-row">
+          <span>{{ t('reason_' ~ reason) }}</span>
+          <span class="bar-track"><span class="bar-fill" style="width: {{ (count / top * 100) | round }}%"></span></span>
+          <span class="n">{{ count }}</span>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}<div class="empty">{{ t('no_data') }}</div>{% endif %}
+    </div>
+  </section>
+</div>
+
+<section class="card">
+  <div class="card-head"><h2>{{ t('recent_activity') }}</h2></div>
+  <div class="card-body tight">
+    {% if recent %}
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>{{ t('created_at') }}</th><th>{{ t('guest') }}</th>
+          <th>{{ t('message') }}</th><th>{{ t('ticket_status') }}</th>
+        </tr></thead>
+        <tbody>
+        {% for m in recent %}
+        <tr>
+          <td class="nowrap num muted">{{ m.created_at.strftime('%m-%d %H:%M') }}</td>
+          <td class="nowrap mono">{{ (guest_labels.get(m.guest_id) or '—') }}</td>
+          <td><div class="cell-main">{{ m.text[:110] }}{{ '…' if m.text|length > 110 }}</div></td>
+          <td class="nowrap">
+            {% if m.direction == 'in' %}<span class="badge">{{ t('inbound') }}</span>
+            {% elif m.in_scope %}<span class="badge green">{{ t('in_scope_yes') }}</span>
+            {% else %}<span class="badge amber">{{ t('in_scope_no') }}</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}<div class="empty">{{ t('no_data') }}</div>{% endif %}
+  </div>
+</section>
+{% endblock %}

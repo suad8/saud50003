@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+
+{% block body %}
+<div class="layout">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">ض</div>
+      <div class="brand-text">
+        <span class="brand-name">{{ t('app_name') }}</span>
+        <span class="brand-sub">{{ tenant.name }}</span>
+      </div>
+    </div>
+
+    <nav class="nav">
+      {% set items = [
+        ('overview',      '/',              'nav_overview',      0),
+        ('knowledge',     '/knowledge',     'nav_knowledge',     0),
+        ('tickets',       '/tickets',       'nav_tickets',       open_tickets),
+        ('handoffs',      '/handoffs',      'nav_handoffs',      open_handoffs),
+        ('conversations', '/conversations', 'nav_conversations', 0),
+        ('gaps',          '/gaps',          'nav_gaps',          0),
+        ('simulator',     '/simulator',     'nav_simulator',     0),
+        ('settings',      '/settings',      'nav_settings',      0),
+      ] %}
+      {% for key, href, label, count in items %}
+      <a href="{{ href }}" class="{{ 'active' if page == key }}">
+        {{ icon(key) }}<span>{{ t(label) }}</span>
+        {%- if count %}<span class="badge-count">{{ count }}</span>{% endif -%}
+      </a>
+      {% endfor %}
+    </nav>
+
+    <div class="sidebar-foot">
+      <div class="lang-switch">
+        {% for code, loc in locales.items() %}
+        <a href="?lang={{ code }}" class="{{ 'active' if code == t.code }}">{{ loc.name }}</a>
+        {% endfor %}
+      </div>
+      <div class="who">
+        <strong>{{ user.name or user.email }}</strong>
+        {{ user.email }}
+      </div>
+      <form method="post" action="/logout">
+        <button class="btn ghost sm" type="submit">{{ icon('logout') }} {{ t('logout') }}</button>
+      </form>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <h1>{% block heading %}{% endblock %}</h1>
+      {% block topbar_extra %}{% endblock %}
+      {% if self.subtitle() | trim %}<div class="sub">{% block subtitle %}{% endblock %}</div>{% endif %}
+    </header>
+    <div class="content">
+      {% if flash %}<div class="alert {{ flash_kind or 'ok' }}">{{ flash }}</div>{% endif %}
+      {% block content %}{% endblock %}
+    </div>
+  </main>
+</div>
+{% endblock %}

@@ -1,0 +1,121 @@
+{% extends "_layout.html" %}
+{% block title %}{{ t('nav_knowledge') }}{% endblock %}
+{% block heading %}{{ t('knowledge_title') }}{% endblock %}
+{% block subtitle %}{{ t('knowledge_intro') }}{% endblock %}
+
+{% macro fact_form(action, fact=None, submit_label='') %}
+<form method="post" action="{{ action }}">
+  <div class="form-grid">
+    <div class="field">
+      <label>{{ t('fact_key') }}</label>
+      <input type="text" name="key" dir="ltr" required value="{{ fact.key if fact else next_key }}"
+             {{ 'readonly' if fact }}>
+    </div>
+    <div class="field">
+      <label>{{ t('fact_topic') }} <span class="opt">·</span></label>
+      <input type="text" name="topic" dir="ltr" value="{{ fact.topic if fact else '' }}">
+    </div>
+    <div class="field">
+      <label>{{ t('fact_hours') }} <span class="opt">08:00-16:00</span></label>
+      <input type="text" name="hours" dir="ltr" placeholder="—" value="{{ fact.hours if fact and fact.hours else '' }}">
+    </div>
+    <div class="field">
+      <label>{{ t('fact_valid_until') }} <span class="opt">·</span></label>
+      <input type="date" name="valid_until" value="{{ fact.valid_until.isoformat() if fact and fact.valid_until else '' }}">
+    </div>
+    <div class="field span-2">
+      <label>{{ t('fact_text') }}</label>
+      <textarea name="text" required>{{ fact.text if fact else '' }}</textarea>
+    </div>
+    <div class="field span-2">
+      <label>{{ t('fact_seasons') }}</label>
+      <div class="row">
+        {% set current = (fact.seasons.split(',') if fact else ['normal','ramadan','hajj']) %}
+        {% for s in ['normal','ramadan','hajj'] %}
+        <label class="check">
+          <input type="checkbox" name="seasons" value="{{ s }}" {{ 'checked' if s in current }}>
+          {{ t('season_' ~ s) }}
+        </label>
+        {% endfor %}
+        <label class="check" style="margin-inline-start:14px">
+          <input type="checkbox" name="paid" value="1" {{ 'checked' if fact and fact.paid }}>
+          {{ t('fact_paid') }}
+        </label>
+        <label class="check">
+          <input type="checkbox" name="active" value="1" {{ 'checked' if (fact.active if fact else True) }}>
+          {{ t('fact_active') }}
+        </label>
+      </div>
+    </div>
+  </div>
+  <div class="form-actions">
+    <button class="btn primary" type="submit">{{ submit_label or t('save') }}</button>
+  </div>
+</form>
+{% endmacro %}
+
+{% block content %}
+<section class="card">
+  <div class="card-body">
+    <details class="inline-form" {{ 'open' if prefill }}>
+      <summary>+ {{ t('add_fact') }}</summary>
+      {% if prefill %}<div class="alert info" style="margin-bottom:14px">{{ prefill }}</div>{% endif %}
+      {{ fact_form('/knowledge/create', none, t('add_fact')) }}
+    </details>
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-head">
+    <h2>{{ t('knowledge_title') }}</h2>
+    <span class="badge">{{ facts | length }}</span>
+  </div>
+  <div class="card-body tight">
+    {% if facts %}
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>{{ t('fact_key') }}</th><th>{{ t('fact_text') }}</th>
+          <th>{{ t('fact_seasons') }}</th><th>{{ t('fact_hours') }}</th>
+          <th>{{ t('ticket_status') }}</th><th class="num">{{ t('actions') }}</th>
+        </tr></thead>
+        <tbody>
+        {% for f in facts %}
+        <tr>
+          <td class="nowrap mono">{{ f.key }}</td>
+          <td>
+            <div class="cell-main">{{ f.text }}</div>
+            {% if f.topic %}<div class="cell-sub mono">{{ f.topic }}</div>{% endif %}
+          </td>
+          <td class="nowrap">
+            <div class="chips">
+              {% for s in f.seasons.split(',') if s %}<span class="chip">{{ t('season_' ~ s) }}</span>{% endfor %}
+            </div>
+          </td>
+          <td class="nowrap mono muted">{{ f.hours or '—' }}</td>
+          <td class="nowrap">
+            {% if not f.active %}<span class="badge">{{ t('status_cancelled') }}</span>
+            {% elif f.valid_until and f.valid_until < today %}<span class="badge red">{{ t('fact_valid_until') }} {{ f.valid_until }}</span>
+            {% elif f.valid_until %}<span class="badge amber">{{ f.valid_until }}</span>
+            {% else %}<span class="badge green"><span class="badge-dot"></span>{{ t('fact_active') }}</span>{% endif %}
+            {% if f.paid %}<span class="badge blue">{{ t('fact_paid') }}</span>{% endif %}
+          </td>
+          <td class="nowrap num">
+            <details class="inline-form">
+              <summary class="btn ghost sm" style="display:inline-flex">{{ t('edit') }}</summary>
+              <div style="padding:14px 0; min-width:460px">{{ fact_form('/knowledge/' ~ f.id ~ '/update', f) }}</div>
+            </details>
+            <form method="post" action="/knowledge/{{ f.id }}/delete" style="display:inline"
+                  onsubmit="return confirm('{{ t('confirm_delete') }}')">
+              <button class="btn danger sm" type="submit">{{ t('delete') }}</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}<div class="empty">{{ t('no_data') }}</div>{% endif %}
+  </div>
+</section>
+{% endblock %}

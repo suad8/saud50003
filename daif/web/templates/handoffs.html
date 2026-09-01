@@ -1,0 +1,51 @@
+{% extends "_layout.html" %}
+{% block title %}{{ t('nav_handoffs') }}{% endblock %}
+{% block heading %}{{ t('handoffs_title') }}{% endblock %}
+{% block subtitle %}{% endblock %}
+
+{% block topbar_extra %}
+<div class="row right">
+  {% for value, label in [('', 'nav_handoffs'), ('open', 'status_open'), ('resolved', 'resolved')] %}
+  <a class="btn sm {{ 'primary' if status == value }}" href="/handoffs{{ '?status=' ~ value if value }}">{{ t(label) }}</a>
+  {% endfor %}
+</div>
+{% endblock %}
+
+{% block content %}
+<section class="card">
+  <div class="card-body tight">
+    {% if handoffs %}
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>{{ t('created_at') }}</th><th>{{ t('handoff_guest_text') }}</th>
+          <th>{{ t('handoff_reason') }}</th><th>{{ t('handoff_to') }}</th>
+          <th>{{ t('handoff_note') }}</th><th class="num">{{ t('actions') }}</th>
+        </tr></thead>
+        <tbody>
+        {% for h in handoffs %}
+        <tr>
+          <td class="nowrap num muted">{{ h.created_at.strftime('%m-%d %H:%M') }}</td>
+          <td><div class="cell-main">{{ h.guest_text[:120] }}{{ '…' if h.guest_text|length > 120 }}</div></td>
+          <td class="nowrap">
+            {% set cls = {'complaint':'red','restricted_topic':'amber','unverified_room':'blue'} %}
+            <span class="badge {{ cls.get(h.reason,'') }}">{{ t('reason_' ~ h.reason) }}</span>
+          </td>
+          <td class="nowrap">{{ t('to_' ~ h.to) }}</td>
+          <td class="muted">{{ h.note }}</td>
+          <td class="nowrap num">
+            {% if h.status == 'open' %}
+            <form method="post" action="/handoffs/{{ h.id }}/resolve">
+              <button class="btn sm" type="submit">{{ t('resolve') }}</button>
+            </form>
+            {% else %}<span class="badge green">{{ t('resolved') }}</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}<div class="empty">{{ t('no_data') }}</div>{% endif %}
+  </div>
+</section>
+{% endblock %}

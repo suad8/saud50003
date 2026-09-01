@@ -1,0 +1,64 @@
+{% extends "_layout.html" %}
+{% block title %}{{ t('nav_conversations') }}{% endblock %}
+{% block heading %}{{ t('conversations_title') }}{% endblock %}
+{% block subtitle %}{% endblock %}
+
+{% block content %}
+<div class="grid" style="grid-template-columns: minmax(210px, 270px) 1fr; align-items:start">
+  <section class="card">
+    <div class="card-head"><h2>{{ t('guest') }}</h2></div>
+    <div class="card-body tight">
+      {% if guests %}
+      <table><tbody>
+        {% for g in guests %}
+        <tr>
+          <td>
+            <a href="/conversations?guest={{ g.id }}" style="display:block">
+              <div class="cell-main mono">{{ g.wa_id }}</div>
+              <div class="cell-sub">
+                {{ g.name or '—' }}
+                {% if g.room %}· {{ t('room') }} {{ g.room }}
+                {% else %}· <span style="color:var(--amber)">{{ t('reason_unverified_room') }}</span>{% endif %}
+              </div>
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody></table>
+      {% else %}<div class="empty">{{ t('no_data') }}</div>{% endif %}
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>{{ selected.wa_id if selected else t('message') }}</h2>
+      {% if selected %}<span class="badge">{{ t('room') }} {{ selected.room or '—' }}</span>{% endif %}
+    </div>
+    <div class="card-body">
+      {% if messages %}
+      <div class="stack">
+        {% for m in messages %}
+        <div class="row" style="align-items:flex-start; {{ 'flex-direction:row-reverse' if m.direction == 'out' }}">
+          <div class="bubble {{ m.direction }}">
+            {{ m.text }}
+            {% if m.direction == 'out' %}
+            <div class="chips" style="margin-top:7px">
+              {% if m.in_scope %}<span class="chip">{{ t('in_scope_yes') }}</span>
+              {% else %}<span class="chip">{{ t('in_scope_no') }}</span>{% endif %}
+              {% if m.language %}<span class="chip">{{ m.language }}</span>{% endif %}
+              {% if m.sources %}<span class="chip mono">{{ m.sources }}</span>{% endif %}
+              {% if m.confidence is not none %}<span class="chip">{{ (m.confidence * 100) | round | int }}%</span>{% endif %}
+              {% if m.degraded %}<span class="chip" style="color:var(--red)">{{ t('degraded') }}</span>{% endif %}
+            </div>
+            {% if m.violations %}<div class="cell-sub" style="color:var(--amber); margin-top:5px">{{ t('violations') }}: {{ m.violations }}</div>{% endif %}
+            {% endif %}
+          </div>
+          <span class="muted" style="font-size:.72rem; white-space:nowrap; padding-top:9px">{{ m.created_at.strftime('%m-%d %H:%M') }}</span>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}<div class="empty">{{ t('no_data') }}</div>{% endif %}
+    </div>
+  </section>
+</div>
+{% endblock %}

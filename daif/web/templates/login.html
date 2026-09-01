@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}{{ t('login') }}{% endblock %}
+{% block body %}
+<div class="auth-wrap">
+  <div class="card auth-card">
+    <div class="card-body">
+      <div class="auth-head">
+        <div class="brand-mark">ض</div>
+        <h1>{{ t('app_name') }}</h1>
+        <span class="sub">{{ t('login_subtitle') }}</span>
+      </div>
+
+      {% if error %}<div class="alert error">{{ t('login_error') }}</div>{% endif %}
+
+      <form method="post" action="/login" class="stack">
+        <div class="field">
+          <label for="email">{{ t('email') }}</label>
+          <input id="email" name="email" type="email" required autocomplete="username"
+                 dir="ltr" value="{{ email or '' }}">
+        </div>
+        <div class="field">
+          <label for="password">{{ t('password') }}</label>
+          <input id="password" name="password" type="password" required autocomplete="current-password" dir="ltr">
+        </div>
+        <button class="btn primary" type="submit" style="width:100%">{{ t('login') }}</button>
+      </form>
+
+      <div class="lang-switch" style="justify-content:center">
+        {% for code, loc in locales.items() %}
+        <a href="?lang={{ code }}" class="{{ 'active' if code == t.code }}">{{ loc.name }}</a>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

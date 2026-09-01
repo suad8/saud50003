@@ -1,0 +1,60 @@
+{% extends "_layout.html" %}
+{% block title %}{{ t('nav_tickets') }}{% endblock %}
+{% block heading %}{{ t('tickets_title') }}{% endblock %}
+{% block subtitle %}{% endblock %}
+
+{% block topbar_extra %}
+<div class="row right">
+  {% for value, label in [('', 'nav_tickets'), ('open', 'status_open'), ('in_progress', 'status_in_progress'), ('done', 'status_done')] %}
+  <a class="btn sm {{ 'primary' if status == value }}" href="/tickets{{ '?status=' ~ value if value }}">{{ t(label) }}</a>
+  {% endfor %}
+</div>
+{% endblock %}
+
+{% block content %}
+<section class="card">
+  <div class="card-body tight">
+    {% if tickets %}
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>{{ t('created_at') }}</th><th>{{ t('ticket_room') }}</th>
+          <th>{{ t('ticket_type') }}</th><th>{{ t('ticket_detail') }}</th>
+          <th>{{ t('ticket_time') }}</th><th>{{ t('ticket_urgency') }}</th>
+          <th>{{ t('ticket_status') }}</th><th class="num">{{ t('actions') }}</th>
+        </tr></thead>
+        <tbody>
+        {% for tk in tickets %}
+        <tr>
+          <td class="nowrap num muted">{{ tk.created_at.strftime('%m-%d %H:%M') }}</td>
+          <td class="nowrap mono cell-main">{{ tk.room }}</td>
+          <td class="nowrap"><span class="badge accent">{{ ticket_types.get(tk.type, tk.type) }}</span></td>
+          <td>{{ tk.detail }}</td>
+          <td class="nowrap num muted">{{ tk.requested_time.strftime('%H:%M') if tk.requested_time else '—' }}</td>
+          <td class="nowrap">
+            {% if tk.urgency == 'urgent' %}<span class="badge red">{{ t('urgency_urgent') }}</span>
+            {% else %}<span class="badge">{{ t('urgency_normal') }}</span>{% endif %}
+            {% if tk.escalated %}<span class="badge amber">{{ t('escalated') }}</span>{% endif %}
+          </td>
+          <td class="nowrap">
+            {% set cls = {'open':'amber','in_progress':'blue','done':'green','cancelled':''} %}
+            <span class="badge {{ cls.get(tk.status,'') }}">{{ t('status_' ~ tk.status) }}</span>
+          </td>
+          <td class="nowrap num">
+            <form method="post" action="/tickets/{{ tk.id }}/status" class="row" style="gap:5px; justify-content:flex-end">
+              <select name="status" onchange="this.form.submit()">
+                {% for s in ['open','in_progress','done','cancelled'] %}
+                <option value="{{ s }}" {{ 'selected' if tk.status == s }}>{{ t('status_' ~ s) }}</option>
+                {% endfor %}
+              </select>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}<div class="empty">{{ t('no_data') }}</div>{% endif %}
+  </div>
+</section>
+{% endblock %}
