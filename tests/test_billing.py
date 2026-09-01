@@ -186,3 +186,14 @@ def test_invoice_embeds_a_decodable_qr(db, hotel):
     fields = decode_tlv(invoice.zatca_qr)
     assert fields[4] == format_sar(invoice.total).replace(",", "")
     assert fields[5] == format_sar(invoice.vat_amount).replace(",", "")
+
+
+def test_feature_order_is_stable_across_renders():
+    """frozenset لا يضمن ترتيبًا — بطاقة الأسعار كانت تُرتّب مزاياها عشوائيًا."""
+    from daif.plans import GROUP, PRO
+
+    assert PRO.ordered_features == tuple(PRO.ordered_features)
+    assert GROUP.ordered_features[0] == "analytics"
+    # كل مزايا الباقة معروضة، ولا شيء زائد
+    assert set(GROUP.ordered_features) == set(GROUP.features)
+    assert set(PRO.ordered_features) == set(PRO.features)

@@ -299,7 +299,15 @@ def overview(
     principal: Principal | None = Depends(current_principal),
 ) -> Response:
     if principal is None:
-        return _login_redirect()
+        # الجذر العام صفحة تعريف، لا تحويلًا لصفحة دخول: الزائر الأول
+        # ليس موظف فندق مشترك.
+        return _template(request, "landing.html", {
+            "t": get_translator(_locale_for(request, None)),
+            "locales": LOCALES,
+            "plans": [p for p in CATALOG.values() if p.code != "trial"],
+            "feature_names": FEATURE_NAMES,
+            "money": format_sar,
+        })
     tenant_id = principal.tenant.id
     figures = stats(session, tenant_id)
     recent = list_messages(session, tenant_id, limit=15)

@@ -44,6 +44,13 @@ FEATURE_NAMES: Final[dict[str, str]] = {
 }
 
 
+# ترتيب العرض: من الأعمّ نفعًا إلى الأخصّ
+FEATURE_ORDER: Final[tuple[str, ...]] = (
+    ANALYTICS, SIMULATOR, GROUP_MODE, MULTI_BRANCH,
+    PRIORITY_SUPPORT, PUBLIC_API, KSA_HOSTING,
+)
+
+
 @dataclass(frozen=True)
 class Plan:
     code: str
@@ -66,6 +73,15 @@ class Plan:
 
     def has(self, feature: str) -> bool:
         return feature in self.features
+
+    @property
+    def ordered_features(self) -> tuple[str, ...]:
+        """المزايا بترتيب عرض ثابت.
+
+        `frozenset` لا يضمن ترتيبًا، فكانت البطاقة تعرض المزايا مرتّبة
+        اختلافًا في كل تحميل — يبدو عشوائيًا لمن يقارن الباقات.
+        """
+        return tuple(f for f in FEATURE_ORDER if f in self.features)
 
 
 TRIAL = Plan(
@@ -102,13 +118,15 @@ PRO = Plan(
     features=frozenset({ANALYTICS, SIMULATOR, GROUP_MODE, MULTI_BRANCH, PRIORITY_SUPPORT}),
 )
 
+# ٢٥ ألف رسالة لا ٤٠: بـ٤٠ ألفًا كان هامش هذه الباقة ٥٢٪ بينما أختاها فوق
+# ٦٠٪. الباقة الأغلى يجب ألا تكون الأضعف ربحًا.
 GROUP = Plan(
     code="group",
     name_ar="مجموعة فنادق",
     name_en="Hotel group",
     monthly=sar(6_999),
     max_rooms=0,
-    included_messages=40_000,
+    included_messages=25_000,
     overage=sar(0.22),
     features=frozenset(FEATURE_NAMES),
 )

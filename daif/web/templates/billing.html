@@ -65,7 +65,7 @@
           <td>
             <div class="cell-main">{{ p.name_ar if t.code == 'ar' else p.name_en }}</div>
             <div class="chips" style="margin-top:4px">
-              {% for f in p.features %}<span class="chip">{{ feature_names.get(f, f) }}</span>{% endfor %}
+              {% for f in p.ordered_features %}<span class="chip">{{ feature_names.get(f, f) }}</span>{% endfor %}
             </div>
           </td>
           <td class="num cell-main">{{ p.monthly_sar }}</td>
