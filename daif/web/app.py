@@ -23,7 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
-from .. import authz
+from .. import apikeys, authz
 from ..assistant import Assistant
 from ..clock import now_riyadh, parse_date
 from ..config import get_settings
@@ -123,14 +123,52 @@ TICKET_TYPE_LABELS = {
 }
 
 
+from .api import router as _api_router  # noqa: E402
 from .platform import setup as _platform_setup  # noqa: E402
 
 app.include_router(_platform_setup(templates))
+app.include_router(_api_router)
 
 
 @app.on_event("startup")
 def _startup() -> None:
     init_db()
+    _bootstrap_admin()
+
+
+def _bootstrap_admin() -> None:
+    """ينشئ أول مشغّل للمنصة من متغيّرات البيئة، مرة واحدة.
+
+    على منصات مثل Railway لا توجد طرفية جاهزة عند أول نشر. بدون هذا يصير
+    النظام يعمل ولا أحد يستطيع الدخول إليه. لا يعمل إلا إذا لم يوجد مشغّل
+    أصلًا — فإعادة النشر لا تُنشئ حسابًا ثانيًا ولا تُعيد ضبط كلمة مرور.
+    """
+    import os
+
+    from sqlalchemy import select
+
+    from ..models import PlatformAdmin
+    from ..security import hash_password
+
+    email = os.environ.get("DAIF_BOOTSTRAP_ADMIN_EMAIL", "").strip().lower()
+    password = os.environ.get("DAIF_BOOTSTRAP_ADMIN_PASSWORD", "")
+    if not email or not password:
+        return
+    if len(password) < 12:
+        logger.error("كلمة مرور التهيئة أقصر من ١٢ محرفًا — لم يُنشأ حساب")
+        return
+    try:
+        with session_scope() as session:
+            if session.scalar(select(PlatformAdmin).limit(1)) is not None:
+                return
+            session.add(
+                PlatformAdmin(
+                    email=email, name="مشغّل المنصة", password_hash=hash_password(password)
+                )
+            )
+            logger.info("أُنشئ أول مشغّل للمنصة: %s", email)
+    except Exception:  # noqa: BLE001
+        logger.exception("فشلت تهيئة أول مشغّل")
 
 
 # ---------------------------------------------------------------------------
@@ -277,7 +315,11 @@ def login_submit(
     # دخول ناجح يمسح العدّاد حتى لا يُعاقب المستخدم الشرعي.
     limiter.reset(f"login:{email.strip().lower()}")
     response = RedirectResponse("/", status_code=303)
-    response.set_cookie(auth.COOKIE_NAME, auth.issue(user.id, user.tenant_id), **auth.cookie_kwargs())
+    response.set_cookie(
+        auth.COOKIE_NAME,
+        auth.issue(user.id, user.tenant_id),
+        **auth.cookie_kwargs(secure=request.url.scheme == "https"),
+    )
     return response
 
 
@@ -685,6 +727,10 @@ def settings_page(
     return _render(
         request, session, principal, "settings.html", "settings",
         effective_season=principal.tenant.effective_season(date.today()),
+        api_keys=apikeys.list_keys(session, principal.tenant.id)
+        if authz.can(principal.user.role, authz.WRITE_WHATSAPP)
+        else [],
+        new_key=request.query_params.get("key", ""),
     )
 
 
@@ -753,6 +799,43 @@ def settings_whatsapp(
     if wa_access_token.strip():
         tenant.wa_access_token = encrypt(wa_access_token.strip())
     audit(session, tenant.id, principal.user.email, "settings.whatsapp")
+    return RedirectResponse("/settings?ok=1", status_code=303)
+
+
+@app.post("/settings/api-keys")
+def create_api_key(
+    name: str = Form(...),
+    session: Session = Depends(get_session),
+    principal: Principal | None = Depends(current_principal),
+) -> Response:
+    """ينشئ مفتاح ربط. يُعرض المفتاح مرة واحدة ثم لا يُسترجَع أبدًا."""
+    if principal is None:
+        return _login_redirect()
+    _require(principal, authz.WRITE_WHATSAPP)
+    issued = apikeys.issue(
+        session, principal.tenant.id, name=name, created_by=principal.user.email
+    )
+    audit(
+        session, principal.tenant.id, principal.user.email, "apikey.create",
+        entity="api_key", entity_id=issued.record.prefix,
+    )
+    return RedirectResponse(f"/settings?key={issued.token}", status_code=303)
+
+
+@app.post("/settings/api-keys/{key_id}/revoke")
+def revoke_api_key(
+    key_id: int,
+    session: Session = Depends(get_session),
+    principal: Principal | None = Depends(current_principal),
+) -> Response:
+    if principal is None:
+        return _login_redirect()
+    _require(principal, authz.WRITE_WHATSAPP)
+    if apikeys.revoke(session, principal.tenant.id, key_id):
+        audit(
+            session, principal.tenant.id, principal.user.email, "apikey.revoke",
+            entity="api_key", entity_id=str(key_id),
+        )
     return RedirectResponse("/settings?ok=1", status_code=303)
 
 

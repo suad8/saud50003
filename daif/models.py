@@ -290,6 +290,27 @@ class PlatformAdmin(Base):
     last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class ApiKey(Base):
+    """مفتاح واجهة برمجية لفندق واحد.
+
+    يُخزَّن مجزَّأً لا نصًا: تسريب قاعدة البيانات يجب ألا يمنح أحدًا حق
+    الكتابة على غرف النزلاء. البادئة تُخزَّن نصًا لتمييز المفتاح في اللوحة
+    وفي السجلات بلا كشفه.
+    """
+
+    __tablename__ = "api_keys"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(120), default="")
+    prefix: Mapped[str] = mapped_column(String(16), unique=True, index=True)
+    key_hash: Mapped[str] = mapped_column(String(255))
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    created_by: Mapped[str] = mapped_column(String(120), default="")
+    last_used_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class UsageCounter(Base):
     """عدّاد استهلاك شهري لكل فندق — أساس الفوترة والتقارير."""
 

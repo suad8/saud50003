@@ -21,6 +21,7 @@ COPY prompts ./prompts
 COPY data ./data
 COPY alembic.ini ./
 COPY migrations ./migrations
+COPY scripts ./scripts
 
 # التطبيق لا يعمل بصلاحيات الجذر
 RUN useradd --create-home --uid 10001 daif \
@@ -30,7 +31,8 @@ USER daif
 
 EXPOSE 8000
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-    CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3).status==200 else 1)"
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD python -c "import os,urllib.request,sys; p=os.environ.get('PORT','8000'); sys.exit(0 if urllib.request.urlopen(f'http://127.0.0.1:{p}/healthz', timeout=3).status==200 else 1)"
 
-CMD ["uvicorn", "daif.web.app:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]
+# الترحيلات ثم الخادم، والمنفذ من PORT
+CMD ["./scripts/start.sh"]

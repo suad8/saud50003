@@ -113,7 +113,13 @@ def setup(templates) -> APIRouter:
         admin.last_login_at = now_riyadh()
         response = RedirectResponse("/platform", status_code=303)
         response.set_cookie(
-            COOKIE, issue(admin.id), httponly=True, samesite="lax", max_age=_MAX_AGE, path="/"
+            COOKIE,
+            issue(admin.id),
+            httponly=True,
+            samesite="lax",
+            max_age=_MAX_AGE,
+            path="/",
+            secure=request.url.scheme == "https",
         )
         return response
 

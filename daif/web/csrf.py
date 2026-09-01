@@ -17,7 +17,9 @@ from fastapi import HTTPException, Request
 COOKIE = "daif_csrf"
 FIELD = "csrf_token"
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "TRACE"})
-EXEMPT_PREFIXES = ("/webhook/",)
+# الـwebhook والواجهة البرمجية لا يأتيان من متصفح: الأول يحميه توقيع Meta،
+# والثانية مفتاحها. رمز نموذج لا معنى له في الحالتين.
+EXEMPT_PREFIXES = ("/webhook/", "/api/")
 
 
 def new_token() -> str:
@@ -33,7 +35,14 @@ def attach(request: Request, response, token: str) -> None:
     """يثبّت الرمز في كوكي إن لم يكن مثبّتًا أصلًا."""
     if request.cookies.get(COOKIE) != token:
         response.set_cookie(
-            COOKIE, token, httponly=True, samesite="lax", path="/", max_age=60 * 60 * 12
+            COOKIE,
+            token,
+            httponly=True,
+            samesite="lax",
+            path="/",
+            max_age=60 * 60 * 12,
+            # على https نمنع إرسال الكوكي عبر http
+            secure=request.url.scheme == "https",
         )
 
 

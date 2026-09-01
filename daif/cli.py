@@ -10,6 +10,7 @@ from pathlib import Path
 import yaml
 
 from .clock import parse_date
+from .config import server_port
 from .db import init_db, session_scope
 from .billing import format_sar  # noqa: F401
 from .knowledge import KnowledgeBase
@@ -201,7 +202,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     serve = sub.add_parser("serve", help="تشغيل الخادم")
     serve.add_argument("--host", default="127.0.0.1")
-    serve.add_argument("--port", type=int, default=8000)
+    # الافتراضي من PORT: منصات النشر تحقنه ولا تقبل منفذًا ثابتًا
+    serve.add_argument("--port", type=int, default=server_port())
     serve.add_argument("--reload", action="store_true")
     serve.set_defaults(func=cmd_serve)
 

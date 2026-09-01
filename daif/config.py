@@ -25,6 +25,34 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+def _database_url() -> str:
+    """عنوان قاعدة البيانات، مع تكيّف مع منصات النشر.
+
+    Railway و Heroku وأمثالهما يحقنون `DATABASE_URL` تلقائيًا عند ربط قاعدة
+    بيانات، وبصيغة `postgres://` أو `postgresql://` التي لا يفهمها SQLAlchemy 2
+    بلا اسم المشغّل. نحوّلها هنا بدل أن يكتشف المشغّل الخطأ عند أول إقلاع.
+    """
+    explicit = _env("DAIF_DATABASE_URL", "")
+    if explicit:
+        return _normalise_pg(explicit)
+    injected = _env("DATABASE_URL", "")
+    if injected:
+        return _normalise_pg(injected)
+    return "sqlite:///var/daif.db"
+
+
+def _normalise_pg(url: str) -> str:
+    for prefix in ("postgres://", "postgresql://"):
+        if url.startswith(prefix):
+            return "postgresql+psycopg://" + url[len(prefix) :]
+    return url
+
+
+def server_port() -> int:
+    """المنفذ. منصات النشر تحقن PORT ويجب الاستماع عليه هو لا على ثابت."""
+    return _env_int("PORT", 8000)
+
+
 @dataclass(frozen=True)
 class Settings:
     """إعدادات عامة. القيم الحسّاسة لا تُخزَّن هنا بل تُقرأ من البيئة عند الحاجة."""
@@ -45,9 +73,7 @@ class Settings:
     max_sentences: int = field(default_factory=lambda: _env_int("DAIF_MAX_SENTENCES", 3))
 
     # --- التخزين ---
-    database_url: str = field(
-        default_factory=lambda: _env("DAIF_DATABASE_URL", "sqlite:///var/daif.db")
-    )
+    database_url: str = field(default_factory=lambda: _database_url())
 
     # --- واتساب ---
     wa_api_version: str = field(default_factory=lambda: _env("WHATSAPP_API_VERSION", "v21.0"))

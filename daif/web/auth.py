@@ -54,10 +54,16 @@ def read(raw: str | None) -> tuple[int, int] | None:
         return None
 
 
-def cookie_kwargs() -> dict:
+def cookie_kwargs(secure: bool = False) -> dict:
+    """خصائص كوكي الجلسة.
+
+    `secure` يمنع المتصفح من إرسال الكوكي على http. يُفعَّل تلقائيًا حين
+    يكون الطلب على https — فلا يتعطّل التطوير المحلي ولا يبقى الإنتاج مكشوفًا.
+    """
     return {
         "httponly": True,
         "samesite": "lax",
         "max_age": _MAX_AGE,
         "path": "/",
+        "secure": secure,
     }
