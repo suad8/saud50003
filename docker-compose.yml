@@ -1,0 +1,38 @@
+# تشغيل محلي كامل: التطبيق + قاعدة بيانات
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: daif
+      POSTGRES_USER: daif
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?اضبط POSTGRES_PASSWORD}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U daif -d daif"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DAIF_DATABASE_URL: postgresql+psycopg://daif:${POSTGRES_PASSWORD}@db:5432/daif
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?اضبط ANTHROPIC_API_KEY}
+      DAIF_SECRET_KEY: ${DAIF_SECRET_KEY:?اضبط DAIF_SECRET_KEY}
+      DAIF_DASHBOARD_SECRET: ${DAIF_DASHBOARD_SECRET:?اضبط DAIF_DASHBOARD_SECRET}
+      WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN:-}
+      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET:-}
+      DAIF_MODEL: ${DAIF_MODEL:-claude-opus-5}
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn daif.web.app:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips '*'"
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+volumes:
+  db-data:

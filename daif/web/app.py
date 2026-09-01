@@ -33,6 +33,13 @@ from ..escalation import build_payload, notify
 from .. import billing
 from ..knowledge import KnowledgeError
 from ..plans import CATALOG, FEATURE_NAMES, format_sar, get as get_plan
+from ..reports import (
+    handoffs_csv,
+    invoices_csv,
+    shift_report,
+    shift_report_text,
+    tickets_csv,
+)
 from ..ratelimit import LOGIN, WEBHOOK, limiter
 from ..models import Fact, Guest, HandoffRecord, StaffUser, Tenant, Ticket
 from ..repository import (
@@ -858,6 +865,74 @@ def _process_inbound(inbound) -> None:
         logger.exception("فشل معالجة رسالة واردة من %s", inbound.wa_id)
 
 
+# ---------------------------------------------------------------------------
+# التصدير والتقارير
+# ---------------------------------------------------------------------------
+
+def _csv_response(body: str, filename: str) -> PlainTextResponse:
+    return PlainTextResponse(
+        body,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.get("/export/{kind}.csv")
+def export_csv(
+    kind: str,
+    session: Session = Depends(get_session),
+    principal: Principal | None = Depends(current_principal),
+) -> Response:
+    """تصدير بيانات الفندق. بياناته ملكه — التصدير حق لا ميزة."""
+    if principal is None:
+        return _login_redirect()
+    tenant_id = principal.tenant.id
+    exporters = {
+        "tickets": (authz.VIEW_TICKETS, tickets_csv),
+        "handoffs": (authz.VIEW_HANDOFFS, handoffs_csv),
+        "invoices": (authz.VIEW_BILLING, invoices_csv),
+    }
+    if kind not in exporters:
+        raise HTTPException(status_code=404, detail="نوع تصدير غير معروف")
+    permission, exporter = exporters[kind]
+    _require(principal, permission)
+    audit(session, tenant_id, principal.user.email, "export", entity=kind)
+    return _csv_response(
+        exporter(session, tenant_id), f"daif-{principal.tenant.slug}-{kind}.csv"
+    )
+
+
+@app.get("/reports/shift", response_class=PlainTextResponse)
+def shift(
+    hours: int = Query(default=12, ge=1, le=48),
+    session: Session = Depends(get_session),
+    principal: Principal | None = Depends(current_principal),
+) -> Response:
+    """تقرير الوردية نصًا — يُنسخ ويُرسل لمدير المناوبة كما هو."""
+    if principal is None:
+        return _login_redirect()
+    _require(principal, authz.VIEW_OVERVIEW)
+    report = shift_report(session, principal.tenant.id, hours=hours)
+    return PlainTextResponse(shift_report_text(report, principal.tenant.name))
+
+
+# ---------------------------------------------------------------------------
+# الصحة والمقاييس
+# ---------------------------------------------------------------------------
+
 @app.get("/healthz", response_class=PlainTextResponse)
 def healthz() -> str:
     return "ok"
+
+
+@app.get("/readyz", response_class=PlainTextResponse)
+def readyz(session: Session = Depends(get_session)) -> Response:
+    """جاهزية حقيقية: قاعدة البيانات تستجيب."""
+    from sqlalchemy import text
+
+    try:
+        session.execute(text("SELECT 1"))
+    except Exception:  # noqa: BLE001
+        logger.exception("فحص الجاهزية فشل")
+        return PlainTextResponse("database unavailable", status_code=503)
+    return PlainTextResponse("ready")
