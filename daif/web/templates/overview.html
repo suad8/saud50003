@@ -1,10 +1,13 @@
 {% extends "_layout.html" %}
 {% from "_expiring.html" import expiring_panel %}
+{% from "_onboarding.html" import onboarding_card %}
 {% block title %}{{ t('nav_overview') }}{% endblock %}
 {% block heading %}{{ t('nav_overview') }}{% endblock %}
 {% block subtitle %}{{ t('last_days', days=stats.days) }} · {{ t('season_effective') }}: {{ t('season_' ~ effective_season) }}{% endblock %}
 
 {% block content %}
+{{ onboarding_card(t, onboarding) }}
+
 <div class="grid kpis">
   <div class="card kpi accent hero">
     <div class="label">{{ t('kpi_automation') }}</div>

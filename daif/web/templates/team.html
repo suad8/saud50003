@@ -1,0 +1,99 @@
+{% extends "_layout.html" %}
+{% block title %}{{ t('nav_team') }}{% endblock %}
+{% block heading %}{{ t('team_title') }}{% endblock %}
+{% block subtitle %}{{ t('team_intro') }}{% endblock %}
+
+{% block content %}
+{% if error %}<div class="alert error">{{ t(error) }}</div>{% endif %}
+
+<section class="card">
+  <div class="card-body">
+    <details class="inline-form">
+      <summary>+ {{ t('add_user') }}</summary>
+      <form method="post" action="/team/create">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="form-grid">
+          <div class="field">
+            <label>{{ t('email') }}</label>
+            <input type="email" name="email" dir="ltr" required>
+          </div>
+          <div class="field">
+            <label>{{ t('guest_name') }}</label>
+            <input type="text" name="name">
+          </div>
+          <div class="field">
+            <label>{{ t('password') }} <span class="opt">٨ محارف فأكثر</span></label>
+            <input type="text" name="password" dir="ltr" required minlength="8">
+          </div>
+          <div class="field">
+            <label>{{ t('user_role') }}</label>
+            <select name="role">
+              <option value="staff">{{ t('role_staff') }}</option>
+              <option value="manager">{{ t('role_manager') }}</option>
+              <option value="owner">{{ t('role_owner') }}</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-actions"><button class="btn primary" type="submit">{{ t('add_user') }}</button></div>
+      </form>
+    </details>
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-head">
+    <h2>{{ t('team_title') }}</h2>
+    <span class="badge">{{ staff | length }}</span>
+  </div>
+  <div class="card-body tight">
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>{{ t('email') }}</th><th>{{ t('guest_name') }}</th>
+          <th>{{ t('user_role') }}</th><th>{{ t('ticket_status') }}</th>
+          <th class="num">{{ t('actions') }}</th>
+        </tr></thead>
+        <tbody>
+        {% for u in staff %}
+        <tr>
+          <td class="mono cell-main">
+            {{ u.email }}
+            {% if u.id == user.id %}<span class="badge accent">{{ t('yourself') }}</span>{% endif %}
+          </td>
+          <td>{{ u.name or '—' }}</td>
+          <td>
+            {% if u.id == user.id %}
+              <span class="badge">{{ t('role_' ~ u.role) }}</span>
+            {% else %}
+              <form method="post" action="/team/{{ u.id }}/role" class="row" style="gap:5px">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <select name="role" onchange="this.form.submit()" style="min-width:130px">
+                  {% for r in ['staff','manager','owner'] %}
+                  <option value="{{ r }}" {{ 'selected' if u.role == r }}>{{ t('role_' ~ r) }}</option>
+                  {% endfor %}
+                </select>
+              </form>
+            {% endif %}
+          </td>
+          <td class="nowrap">
+            {% if u.active %}<span class="badge green">{{ t('user_active') }}</span>
+            {% else %}<span class="badge">{{ t('user_disabled') }}</span>{% endif %}
+          </td>
+          <td class="num nowrap">
+            {% if u.id != user.id %}
+            <form method="post" action="/team/{{ u.id }}/toggle">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="btn sm {{ 'danger' if u.active }}" type="submit">
+                {{ t('disable') if u.active else t('enable') }}
+              </button>
+            </form>
+            {% else %}<span class="muted">—</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+{% endblock %}

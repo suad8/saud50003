@@ -195,6 +195,82 @@ def staff_by_email(session: Session, email: str) -> StaffUser | None:
     )
 
 
+def list_staff(session: Session, tenant_id: int) -> list[StaffUser]:
+    return list(
+        session.scalars(
+            select(StaffUser)
+            .where(StaffUser.tenant_id == tenant_id)
+            .order_by(StaffUser.created_at)
+        )
+    )
+
+
+def count_active_owners(session: Session, tenant_id: int) -> int:
+    """عدد الملّاك النشطين — يمنع تعطيل آخر مالك وقفل الفندق خارج حسابه."""
+    return session.scalar(
+        select(func.count(StaffUser.id)).where(
+            StaffUser.tenant_id == tenant_id,
+            StaffUser.role == "owner",
+            StaffUser.active.is_(True),
+        )
+    ) or 0
+
+
+def onboarding_state(session: Session, tenant: Tenant) -> dict:
+    """حالة تهيئة الفندق.
+
+    أكثر سبب تموت فيه التجارب أن الفندق يشتغل ناقص التهيئة: قاعدة معرفة
+    فارغة تعني مساعدًا يحوّل كل شيء، فيظن المدير أنه لا يعمل.
+    """
+    active_facts = session.scalar(
+        select(func.count(Fact.id)).where(
+            Fact.tenant_id == tenant.id, Fact.active.is_(True)
+        )
+    ) or 0
+    verified_guests = session.scalar(
+        select(func.count(Guest.id)).where(
+            Guest.tenant_id == tenant.id, func.trim(Guest.room) != ""
+        )
+    ) or 0
+    replies_sent = session.scalar(
+        select(func.count(Message.id)).where(
+            Message.tenant_id == tenant.id, Message.direction == "out"
+        )
+    ) or 0
+
+    steps = [
+        {
+            "key": "facts",
+            "done": active_facts >= 10,
+            "count": active_facts,
+            "target": 10,
+            "href": "/knowledge",
+        },
+        {
+            "key": "whatsapp",
+            "done": bool(tenant.wa_phone_number_id and tenant.wa_access_token),
+            "href": "/settings",
+        },
+        {
+            "key": "rooms",
+            "done": verified_guests > 0,
+            "count": verified_guests,
+            "href": "/guests",
+        },
+        {
+            "key": "test",
+            "done": replies_sent > 0,
+            "href": "/simulator",
+        },
+    ]
+    return {
+        "steps": steps,
+        "done": sum(1 for s in steps if s["done"]),
+        "total": len(steps),
+        "complete": all(s["done"] for s in steps),
+    }
+
+
 # --- التذاكر والتحويلات ------------------------------------------------------
 
 def list_tickets(

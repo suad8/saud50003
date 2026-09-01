@@ -44,6 +44,7 @@ from ..ratelimit import LOGIN, WEBHOOK, limiter
 from ..models import Fact, Guest, HandoffRecord, StaffUser, Tenant, Ticket
 from ..repository import (
     audit,
+    count_active_owners,
     count_unverified_guests,
     expiring_facts,
     conversation_history,
@@ -53,14 +54,16 @@ from ..repository import (
     list_guests,
     list_handoffs,
     list_messages,
+    list_staff,
     list_tickets,
     load_knowledge_base,
     next_fact_key,
+    onboarding_state,
     staff_by_email,
     stats,
     tenant_by_phone_number_id,
 )
-from ..security import verify_password
+from ..security import hash_password, verify_password
 from ..service import build_context, handle_inbound
 from ..whatsapp import client_for_tenant, parse_webhook, verify_signature, verify_subscription
 from . import auth, csrf
@@ -225,6 +228,7 @@ PAGE_PERMISSION: dict[str, str] = {
     "simulator": authz.VIEW_SIMULATOR,
     "settings": authz.VIEW_SETTINGS,
     "billing": authz.VIEW_BILLING,
+    "team": authz.WRITE_USERS,
 }
 
 
@@ -365,6 +369,7 @@ def overview(
         cache_rate=cache_rate,
         fact_count=len(list_facts(session, tenant_id, only_active=True)),
         expiring=expiring_facts(session, tenant_id),
+        onboarding=onboarding_state(session, principal.tenant),
         today=date.today(),
         effective_season=principal.tenant.effective_season(date.today()),
     )
@@ -640,6 +645,120 @@ def gaps_page(
         request, session, principal, "gaps.html", "gaps",
         gaps=knowledge_gaps(session, principal.tenant.id),
     )
+
+
+# ---------------------------------------------------------------------------
+# الفريق
+# ---------------------------------------------------------------------------
+
+@app.get("/team", response_class=HTMLResponse)
+def team_page(
+    request: Request,
+    session: Session = Depends(get_session),
+    principal: Principal | None = Depends(current_principal),
+) -> Response:
+    if principal is None:
+        return _login_redirect()
+    return _render(
+        request, session, principal, "team.html", "team",
+        staff=list_staff(session, principal.tenant.id),
+        error=request.query_params.get("err", ""),
+    )
+
+
+@app.post("/team/create")
+def team_create(
+    email: str = Form(...),
+    password: str = Form(...),
+    name: str = Form(default=""),
+    role: str = Form(default="staff"),
+    session: Session = Depends(get_session),
+    principal: Principal | None = Depends(current_principal),
+) -> Response:
+    if principal is None:
+        return _login_redirect()
+    _require(principal, authz.WRITE_USERS)
+    if len(password) < 8 or role not in authz.ROLES:
+        return RedirectResponse("/team?err=login_error", status_code=303)
+    if staff_by_email(session, email):
+        return RedirectResponse("/team?err=login_error", status_code=303)
+    session.add(
+        StaffUser(
+            tenant_id=principal.tenant.id,
+            email=email.strip().lower(),
+            name=name.strip(),
+            password_hash=hash_password(password),
+            role=role,
+            locale=principal.user.locale,
+        )
+    )
+    audit(
+        session, principal.tenant.id, principal.user.email, "staff.create",
+        entity="staff", entity_id=email.strip().lower(), detail=f"role={role}",
+    )
+    return RedirectResponse("/team?ok=1", status_code=303)
+
+
+def _own_tenant_staff(session: Session, principal: Principal, staff_id: int) -> StaffUser | None:
+    record = session.get(StaffUser, staff_id)
+    if record is None or record.tenant_id != principal.tenant.id:
+        return None
+    return record
+
+
+@app.post("/team/{staff_id}/role")
+def team_role(
+    staff_id: int,
+    role: str = Form(...),
+    session: Session = Depends(get_session),
+    principal: Principal | None = Depends(current_principal),
+) -> Response:
+    if principal is None:
+        return _login_redirect()
+    _require(principal, authz.WRITE_USERS)
+    # لا يغيّر أحد دور نفسه: أسرع طريق لقفل الفندق خارج حسابه
+    if staff_id == principal.user.id:
+        return RedirectResponse("/team?err=cannot_change_self", status_code=303)
+    record = _own_tenant_staff(session, principal, staff_id)
+    if record is None or role not in authz.ROLES:
+        return RedirectResponse("/team", status_code=303)
+    # آخر مالك نشط لا يُنزَّل
+    if record.role == "owner" and role != "owner" and count_active_owners(session, principal.tenant.id) <= 1:
+        return RedirectResponse("/team?err=last_owner_warning", status_code=303)
+    record.role = role
+    audit(
+        session, principal.tenant.id, principal.user.email, "staff.role",
+        entity="staff", entity_id=record.email, detail=f"role={role}",
+    )
+    return RedirectResponse("/team?ok=1", status_code=303)
+
+
+@app.post("/team/{staff_id}/toggle")
+def team_toggle(
+    staff_id: int,
+    session: Session = Depends(get_session),
+    principal: Principal | None = Depends(current_principal),
+) -> Response:
+    if principal is None:
+        return _login_redirect()
+    _require(principal, authz.WRITE_USERS)
+    if staff_id == principal.user.id:
+        return RedirectResponse("/team?err=cannot_change_self", status_code=303)
+    record = _own_tenant_staff(session, principal, staff_id)
+    if record is None:
+        return RedirectResponse("/team", status_code=303)
+    if (
+        record.active
+        and record.role == "owner"
+        and count_active_owners(session, principal.tenant.id) <= 1
+    ):
+        return RedirectResponse("/team?err=last_owner_warning", status_code=303)
+    record.active = not record.active
+    audit(
+        session, principal.tenant.id, principal.user.email, "staff.toggle",
+        entity="staff", entity_id=record.email, detail=f"active={record.active}",
+    )
+    return RedirectResponse("/team?ok=1", status_code=303)
 
 
 # ---------------------------------------------------------------------------
