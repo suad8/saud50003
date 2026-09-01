@@ -72,7 +72,28 @@
 <section class="card">
   <div class="card-head">
     <h2>{{ t('knowledge_title') }}</h2>
-    <span class="badge">{{ facts | length }}</span>
+    <span class="badge">{{ facts | length }} {{ t('results') }}</span>
+    <form method="get" action="/knowledge" class="row right" style="gap:7px">
+      <input type="search" name="q" value="{{ q }}" placeholder="{{ t('search_facts') }}"
+             style="max-width:230px">
+      <select name="season" onchange="this.form.submit()">
+        <option value="">{{ t('fact_seasons') }}: {{ t('filter_all') }}</option>
+        {% for sname in ['normal','ramadan','hajj'] %}
+        <option value="{{ sname }}" {{ 'selected' if season_filter == sname }}>{{ t('season_' ~ sname) }}</option>
+        {% endfor %}
+      </select>
+      <select name="status" onchange="this.form.submit()">
+        <option value="">{{ t('ticket_status') }}: {{ t('filter_all') }}</option>
+        <option value="active" {{ 'selected' if status_filter == 'active' }}>{{ t('fact_active') }}</option>
+        <option value="inactive" {{ 'selected' if status_filter == 'inactive' }}>{{ t('status_inactive') }}</option>
+        <option value="expiring" {{ 'selected' if status_filter == 'expiring' }}>{{ t('status_expiring') }}</option>
+        <option value="paid" {{ 'selected' if status_filter == 'paid' }}>{{ t('fact_paid') }}</option>
+      </select>
+      <button class="btn sm" type="submit">{{ t('search') }}</button>
+      {% if q or season_filter or status_filter %}
+      <a class="btn sm ghost" href="/knowledge">{{ t('clear') }}</a>
+      {% endif %}
+    </form>
   </div>
   <div class="card-body tight">
     {% if facts %}

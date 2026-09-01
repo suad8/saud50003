@@ -17,7 +17,7 @@
         </span>
         <span style="flex:1; {% if step.done %}color:var(--text-muted); text-decoration:line-through{% endif %}">
           {{ t('step_' ~ step.key) }}
-          {% if step.count is defined and not step.done %}
+          {% if step.target is defined and not step.done %}
           <span class="muted">({{ step.count }} / {{ step.target }})</span>
           {% endif %}
         </span>

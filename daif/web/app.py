@@ -59,6 +59,7 @@ from ..repository import (
     load_knowledge_base,
     next_fact_key,
     onboarding_state,
+    search_facts,
     staff_by_email,
     stats,
     tenant_by_phone_number_id,
@@ -383,6 +384,9 @@ def overview(
 def knowledge_page(
     request: Request,
     from_gap: str = Query(default=""),
+    q: str = Query(default=""),
+    season: str = Query(default=""),
+    status: str = Query(default=""),
     session: Session = Depends(get_session),
     principal: Principal | None = Depends(current_principal),
 ) -> Response:
@@ -390,7 +394,12 @@ def knowledge_page(
         return _login_redirect()
     return _render(
         request, session, principal, "knowledge.html", "knowledge",
-        facts=list_facts(session, principal.tenant.id),
+        facts=search_facts(
+            session, principal.tenant.id, query=q, season=season, status=status
+        ),
+        q=q,
+        season_filter=season,
+        status_filter=status,
         next_key=next_fact_key(session, principal.tenant.id),
         today=date.today(),
         prefill=from_gap,

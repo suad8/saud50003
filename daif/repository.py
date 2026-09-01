@@ -111,6 +111,50 @@ def list_facts(session: Session, tenant_id: int, *, only_active: bool = False) -
     return list(session.scalars(stmt.order_by(Fact.key)))
 
 
+def search_facts(
+    session: Session,
+    tenant_id: int,
+    *,
+    query: str = "",
+    season: str = "",
+    status: str = "",
+) -> list[Fact]:
+    """يبحث في قاعدة معرفة الفندق.
+
+    بأربعين حقيقة فأكثر يصير التمرير في الجدول أبطأ من إعادة كتابة الحقيقة،
+    فالمدير يتوقف عن الصيانة أصلًا.
+    """
+    stmt = select(Fact).where(Fact.tenant_id == tenant_id)
+
+    needle = query.strip()
+    if needle:
+        pattern = f"%{needle}%"
+        stmt = stmt.where(
+            Fact.text.ilike(pattern) | Fact.topic.ilike(pattern) | Fact.key.ilike(pattern)
+        )
+    if season in ("normal", "ramadan", "hajj"):
+        # المواسم مخزّنة مفصولة بفواصل — نبحث عن الاسم كاملًا بين فاصلتين
+        stmt = stmt.where(
+            (Fact.seasons == season)
+            | Fact.seasons.like(f"{season},%")
+            | Fact.seasons.like(f"%,{season}")
+            | Fact.seasons.like(f"%,{season},%")
+        )
+    if status == "active":
+        stmt = stmt.where(Fact.active.is_(True))
+    elif status == "inactive":
+        stmt = stmt.where(Fact.active.is_(False))
+    elif status == "expiring":
+        from datetime import timedelta
+
+        horizon = now_riyadh().date() + timedelta(days=14)
+        stmt = stmt.where(Fact.valid_until.is_not(None), Fact.valid_until <= horizon)
+    elif status == "paid":
+        stmt = stmt.where(Fact.paid.is_(True))
+
+    return list(session.scalars(stmt.order_by(Fact.key)))
+
+
 def load_knowledge_base(session: Session, tenant_id: int) -> KnowledgeBase:
     """يبني قاعدة المعرفة التي سيراها النموذج — الحقائق المفعّلة فقط."""
     facts = list_facts(session, tenant_id, only_active=True)
@@ -254,7 +298,6 @@ def onboarding_state(session: Session, tenant: Tenant) -> dict:
         {
             "key": "rooms",
             "done": verified_guests > 0,
-            "count": verified_guests,
             "href": "/guests",
         },
         {
