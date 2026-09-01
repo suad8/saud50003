@@ -40,6 +40,46 @@
 </section>
 
 <section class="card">
+  <div class="card-head">
+    <h2>{{ t('settings_season') }}</h2>
+    <span class="badge accent">{{ t('season_effective') }}: {{ t('season_' ~ effective_season) }}</span>
+    {% if tenant.season_auto %}<span class="badge">{{ t('season_scheduled') }}</span>{% endif %}
+  </div>
+  <div class="card-body">
+    <form method="post" action="/settings/seasons">
+      <div class="form-grid">
+        <div class="field span-2">
+          <label class="check">
+            <input type="checkbox" name="season_auto" value="1" {{ 'checked' if tenant.season_auto }}>
+            {{ t('season_auto') }}
+          </label>
+        </div>
+        <div class="field">
+          <label>{{ t('ramadan_dates') }}</label>
+          <div class="row">
+            <input type="date" name="ramadan_start" value="{{ tenant.ramadan_start.isoformat() if tenant.ramadan_start else '' }}">
+            <input type="date" name="ramadan_end" value="{{ tenant.ramadan_end.isoformat() if tenant.ramadan_end else '' }}">
+          </div>
+        </div>
+        <div class="field">
+          <label>{{ t('hajj_dates') }}</label>
+          <div class="row">
+            <input type="date" name="hajj_start" value="{{ tenant.hajj_start.isoformat() if tenant.hajj_start else '' }}">
+            <input type="date" name="hajj_end" value="{{ tenant.hajj_end.isoformat() if tenant.hajj_end else '' }}">
+          </div>
+        </div>
+        <div class="field span-2">
+          <label>{{ t('escalation_webhook') }} <span class="opt">— {{ t('escalation_hint') }}</span></label>
+          <input type="text" name="escalation_webhook" dir="ltr" placeholder="https://..."
+                 value="{{ tenant.escalation_webhook }}">
+        </div>
+      </div>
+      <div class="form-actions"><button class="btn primary" type="submit">{{ t('save') }}</button></div>
+    </form>
+  </div>
+</section>
+
+<section class="card">
   <div class="card-head"><h2>{{ t('settings_whatsapp') }}</h2></div>
   <div class="card-body">
     <form method="post" action="/settings/whatsapp">

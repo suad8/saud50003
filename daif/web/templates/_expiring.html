@@ -1,0 +1,35 @@
+{% macro expiring_panel(t, expiring, today) %}
+{% if expiring %}
+<section class="card">
+  <div class="card-head">
+    <h2>{{ t('expiring_title') }}</h2>
+    <span class="badge amber">{{ expiring | length }}</span>
+    <span class="muted right" style="font-size:.82rem">{{ t('expiring_intro') }}</span>
+  </div>
+  <div class="card-body tight">
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>{{ t('fact_key') }}</th><th>{{ t('fact_text') }}</th>
+          <th>{{ t('fact_valid_until') }}</th><th class="num">{{ t('actions') }}</th>
+        </tr></thead>
+        <tbody>
+        {% for f in expiring %}
+        {% set left = (f.valid_until - today).days %}
+        <tr>
+          <td class="nowrap mono">{{ f.key }}</td>
+          <td class="cell-main">{{ f.text }}</td>
+          <td class="nowrap">
+            {% if left < 0 %}<span class="badge red">{{ t('expired') }} · {{ f.valid_until }}</span>
+            {% else %}<span class="badge amber">{{ t('expires_in', days=left) }}</span>{% endif %}
+          </td>
+          <td class="num nowrap"><a class="btn sm" href="/knowledge">{{ t('edit') }}</a></td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+{% endif %}
+{% endmacro %}

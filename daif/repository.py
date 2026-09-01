@@ -52,6 +52,26 @@ def load_knowledge_base(session: Session, tenant_id: int) -> KnowledgeBase:
     return KnowledgeBase.from_records([f.to_record() for f in facts])
 
 
+def expiring_facts(session: Session, tenant_id: int, *, days: int = 14) -> list[Fact]:
+    """حقائق انتهت صلاحيتها أو توشك — أخطر ما في قاعدة المعرفة معلومة قديمة."""
+    from datetime import timedelta
+
+    today = now_riyadh().date()
+    horizon = today + timedelta(days=days)
+    return list(
+        session.scalars(
+            select(Fact)
+            .where(
+                Fact.tenant_id == tenant_id,
+                Fact.active.is_(True),
+                Fact.valid_until.is_not(None),
+                Fact.valid_until <= horizon,
+            )
+            .order_by(Fact.valid_until)
+        )
+    )
+
+
 def next_fact_key(session: Session, tenant_id: int) -> str:
     """يولّد معرّفًا جديدًا لا يصطدم بمعرّف محذوف سابقًا."""
     keys = [
@@ -88,6 +108,15 @@ def list_guests(session: Session, tenant_id: int, limit: int = 200) -> list[Gues
             .limit(limit)
         )
     )
+
+
+def count_unverified_guests(session: Session, tenant_id: int) -> int:
+    """نزلاء راسلوا الفندق ولم تُربط أرقامهم بغرفة — لا تُفتح لهم تذاكر."""
+    return session.scalar(
+        select(func.count(Guest.id)).where(
+            Guest.tenant_id == tenant_id, func.trim(Guest.room) == ""
+        )
+    ) or 0
 
 
 # --- الموظفون ---------------------------------------------------------------

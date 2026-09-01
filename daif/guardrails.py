@@ -202,10 +202,15 @@ def enforce(
             answer="سيوافيك الاستقبال بذلك.",
         )
 
-    # ---- ٧) الغرفة (القاعدة ٥): لا تذكرة إلا على غرفة موثّقة ----
+    # ---- ٧) الغرفة (القاعدة ٥): لا تذكرة إلا على غرفة مصرّح بها ----
+    #
+    # قائمة الغرف المصرّح بها تأتي من سجلات الفندق دائمًا: غرفة النزيل في
+    # الوضع الفردي، وغرف المجموعة المسجّلة في وضع المطوّف. لا تُقبل غرفة
+    # مصدرها نص الرسالة مهما بدت صحيحة.
     if reply.request is not None:
-        requested_room = reply.request.room.strip()
-        if not ctx.room_verified:
+        allowed = ctx.authorised_rooms
+        requested = reply.request.all_rooms
+        if not allowed:
             violations.append("تذكرة لرقم غير مربوط بغرفة")
             reply = _force_handoff(
                 reply,
@@ -214,17 +219,33 @@ def enforce(
                 "طلب من رقم غير مربوط بغرفة — يحتاج تحقق",
                 answer="سيتواصل معك الاستقبال لتأكيد الطلب.",
             )
-        elif requested_room != ctx.room.strip():
-            violations.append(
-                f"تذكرة لغرفة مخالفة للسياق: {requested_room!r} بدل {ctx.room!r}"
-            )
-            reply = _force_handoff(
-                reply,
-                "unverified_room",
-                "front_desk",
-                f"النزيل طلب خدمة لغرفة {requested_room} وهو مسجّل في {ctx.room} — يحتاج تحقق",
-                answer="سيتواصل معك الاستقبال لتأكيد الطلب.",
-            )
+        else:
+            kept = [room for room in requested if room in allowed]
+            rejected = [room for room in requested if room not in allowed]
+            if not kept:
+                violations.append(
+                    f"تذكرة لغرف غير مصرّح بها: {rejected!r} خارج {list(allowed)!r}"
+                )
+                reply = _force_handoff(
+                    reply,
+                    "unverified_room",
+                    "front_desk",
+                    f"طلب لغرفة {', '.join(rejected) or '؟'} غير مربوطة بهذا الرقم — يحتاج تحقق",
+                    answer="سيتواصل معك الاستقبال لتأكيد الطلب.",
+                )
+            else:
+                detail = reply.request.detail
+                if rejected:
+                    violations.append(f"أُسقطت غرف غير مصرّح بها: {rejected!r}")
+                    detail = f"{detail} — [أُسقطت غرف غير مصرّح بها: {', '.join(rejected)}]"
+                if rejected or kept != requested or reply.request.rooms != kept[1:]:
+                    reply = reply.model_copy(
+                        update={
+                            "request": reply.request.model_copy(
+                                update={"room": kept[0], "rooms": kept[1:], "detail": detail}
+                            )
+                        }
+                    )
 
     # ---- ٨) عتبة الثقة ----
     if reply.confidence < cfg.confidence_threshold:

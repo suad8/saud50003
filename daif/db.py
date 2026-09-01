@@ -38,10 +38,37 @@ def get_engine(url: str | None = None) -> Engine:
 
 
 def init_db(url: str | None = None) -> Engine:
-    """ينشئ الجداول إن لم تكن موجودة."""
+    """ينشئ الجداول إن لم تكن موجودة، ويضيف الأعمدة المستجدّة."""
     engine = get_engine(url)
     Base.metadata.create_all(engine)
+    _add_missing_columns(engine)
     return engine
+
+
+def _add_missing_columns(engine: Engine) -> None:
+    """ترحيل خفيف: يضيف الأعمدة التي ظهرت في النماذج ولم تُنشأ بعد.
+
+    كافٍ لإضافة عمود بقيمة افتراضية، وهو أغلب ما يحدث في هذه المرحلة. أي
+    تغيير أعقد (تبديل نوع، حذف عمود، فهرس فريد جديد) يحتاج ترحيلًا صريحًا.
+    """
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+    with engine.begin() as connection:
+        for table in Base.metadata.sorted_tables:
+            if table.name not in existing_tables:
+                continue
+            present = {col["name"] for col in inspector.get_columns(table.name)}
+            for column in table.columns:
+                if column.name in present:
+                    continue
+                ddl = f"ALTER TABLE {table.name} ADD COLUMN {column.name} {column.type.compile(engine.dialect)}"
+                default = column.default.arg if column.default is not None else None
+                if isinstance(default, (str, int, float)) and not callable(default):
+                    literal = f"'{default}'" if isinstance(default, str) else str(default)
+                    ddl += f" DEFAULT {literal}"
+                connection.execute(text(ddl))
 
 
 def session_factory() -> sessionmaker[Session]:

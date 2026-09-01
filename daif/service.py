@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from sqlalchemy.orm import Session
 
@@ -24,8 +24,13 @@ class Outcome:
     result: AssistantResult
     inbound: Message
     outbound: Message
-    ticket: Ticket | None = None
+    tickets: list[Ticket] = field(default_factory=list)
     handoff: HandoffRecord | None = None
+
+    @property
+    def ticket(self) -> Ticket | None:
+        """أول تذكرة — للحالة الفردية الشائعة."""
+        return self.tickets[0] if self.tickets else None
 
     @property
     def reply_text(self) -> str:
@@ -38,16 +43,18 @@ class Outcome:
 
 def build_context(tenant: Tenant, guest: Guest) -> GuestContext:
     """يبني سياق التشغيل من إعدادات الفندق وبيانات النزيل الموثّقة."""
+    moment = now_riyadh()
     return GuestContext(
         hotel_name=tenant.name,
-        now=now_riyadh(),
-        season=tenant.season,
+        now=moment,
+        season=tenant.effective_season(moment.date()),
         # الغرفة تأتي من سجل النزيل فقط، لا من نص رسالته أبدًا.
         room=guest.room or "",
         guest_name=guest.name or "",
         hk_window_raw=tenant.hk_window,
         desk_status=tenant.desk_status,
         group_mode=guest.group_mode or "individual",
+        group_rooms=guest.room_list,
     )
 
 
@@ -115,21 +122,25 @@ def handle_inbound(
     session.add(outbound)
     session.flush()
 
-    ticket: Ticket | None = None
+    tickets: list[Ticket] = []
     if reply.request is not None:
         requested_at = parse_iso8601(reply.request.requested_time)
-        ticket = Ticket(
-            tenant_id=tenant.id,
-            guest_id=guest.id,
-            message_id=outbound.id,
-            type=reply.request.type,
-            room=reply.request.room,
-            detail=reply.request.detail,
-            requested_time=requested_at,
-            urgency=reply.request.urgency,
-            escalated=result.escalate,
-        )
-        session.add(ticket)
+        # طلب المطوّف قد يغطي عدة غرف — تذكرة مستقلة لكل غرفة حتى يتابعها
+        # التدبير الفندقي غرفةً غرفة بدل تذكرة واحدة غامضة.
+        for room in reply.request.all_rooms:
+            ticket = Ticket(
+                tenant_id=tenant.id,
+                guest_id=guest.id,
+                message_id=outbound.id,
+                type=reply.request.type,
+                room=room,
+                detail=reply.request.detail,
+                requested_time=requested_at,
+                urgency=reply.request.urgency,
+                escalated=result.escalate,
+            )
+            session.add(ticket)
+            tickets.append(ticket)
 
     handoff: HandoffRecord | None = None
     if reply.handoff is not None:
@@ -158,6 +169,6 @@ def handle_inbound(
         result=result,
         inbound=inbound,
         outbound=outbound,
-        ticket=ticket,
+        tickets=tickets,
         handoff=handoff,
     )

@@ -50,6 +50,19 @@ class Tenant(Base):
     hk_window: Mapped[str] = mapped_column(String(32), default="08:00-16:00")
     desk_status: Mapped[str] = mapped_column(String(16), default="staffed")
 
+    # --- جدولة المواسم ---
+    # التبديل اليدوي يُنسى في ليلة الثلاثين من شعبان. التواريخ يدخلها المدير
+    # مرة واحدة، والنظام يبدّل من تلقاء نفسه.
+    season_auto: Mapped[bool] = mapped_column(Boolean, default=False)
+    ramadan_start: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    ramadan_end: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    hajj_start: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    hajj_end: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+
+    # --- التصعيد ---
+    # يُنادى عند طلب عاجل والاستقبال غير مشغّل. فارغ يعني تسجيل في السجل فقط.
+    escalation_webhook: Mapped[str] = mapped_column(Text, default="")
+
     # --- واتساب ---
     wa_phone_number_id: Mapped[str] = mapped_column(String(64), default="", index=True)
     wa_access_token: Mapped[str] = mapped_column(Text, default="")
@@ -61,6 +74,24 @@ class Tenant(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     facts: Mapped[list["Fact"]] = relationship(back_populates="tenant", cascade="all, delete-orphan")
+
+    def effective_season(self, today: date) -> str:
+        """الموسم الساري فعلًا اليوم.
+
+        الجدولة تسبق الإعداد اليدوي حين تكون مفعّلة وتاريخ اليوم داخل نافذة
+        معلومة. خارج النوافذ نعود إلى `normal`، لا إلى آخر موسم يدوي — فبقاء
+        وضع رمضان بعد العيد أخطر من العودة للوضع العادي.
+        """
+        if not self.season_auto:
+            return self.season
+        windows = (
+            ("ramadan", self.ramadan_start, self.ramadan_end),
+            ("hajj", self.hajj_start, self.hajj_end),
+        )
+        for name, start, end in windows:
+            if start and end and start <= today <= end:
+                return name
+        return "normal"
 
 
 class Fact(Base):
@@ -134,6 +165,8 @@ class Guest(Base):
     # الغرفة الموثّقة. الفراغ يعني رقم غير مربوط — لا تُفتح له تذاكر.
     room: Mapped[str] = mapped_column(String(16), default="")
     group_mode: Mapped[str] = mapped_column(String(16), default="individual")
+    # غرف المطوّف مفصولة بفواصل. تُدار من اللوحة ولا تُقرأ أبدًا من رسالة النزيل.
+    group_rooms: Mapped[str] = mapped_column(Text, default="")
     language: Mapped[str] = mapped_column(String(8), default="")
     checkout_on: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
@@ -142,6 +175,15 @@ class Guest(Base):
     @property
     def room_verified(self) -> bool:
         return bool((self.room or "").strip())
+
+    @property
+    def room_list(self) -> tuple[str, ...]:
+        """غرف المجموعة بعد التنظيف."""
+        return tuple(
+            part.strip()
+            for part in (self.group_rooms or "").replace("،", ",").split(",")
+            if part.strip()
+        )
 
 
 class Message(Base):

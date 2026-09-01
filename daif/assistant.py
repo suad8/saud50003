@@ -118,7 +118,7 @@ class Assistant:
 
         facts_block = kb.render(ctx.now, ctx.season)
         system_text = build_cached_system(
-            ctx.hotel_name, facts_block, template=self._template
+            ctx.hotel_name, facts_block, template=self._template, group_mode=ctx.group_mode
         )
         turns: list[dict] = list(history or [])
         turns.append({"role": "user", "content": message})

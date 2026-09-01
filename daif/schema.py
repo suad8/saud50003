@@ -46,7 +46,13 @@ HOUSEKEEPING_TYPES: frozenset[str] = frozenset(
 
 
 class ServiceRequest(BaseModel):
-    """تذكرة خدمة يفتحها المساعد لفريق العمليات."""
+    """تذكرة خدمة يفتحها المساعد لفريق العمليات.
+
+    `rooms` توسعة لوضع المجموعات: المواصفة تقبل طلبًا يغطي عدة غرف إذا ذكرها
+    المطوّف صراحة، لكن العقد الأساسي يحمل غرفة واحدة. الحقل اختياري وفارغ في
+    الوضع الفردي، فلا يغيّر سلوك العقد الأصلي. كل غرفة فيه تُطابَق مع قائمة
+    الغرف المصرّح بها للمطوّف — القائمة من سجلات الفندق لا من نص الرسالة.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -55,6 +61,17 @@ class ServiceRequest(BaseModel):
     detail: str
     requested_time: str | None = None
     urgency: Urgency = "normal"
+    rooms: list[str] = []
+
+    @property
+    def all_rooms(self) -> list[str]:
+        """كل الغرف المشمولة، بلا تكرار وبترتيب ثابت."""
+        seen: list[str] = []
+        for candidate in [self.room, *self.rooms]:
+            value = (candidate or "").strip()
+            if value and value not in seen:
+                seen.append(value)
+        return seen
 
 
 class Handoff(BaseModel):

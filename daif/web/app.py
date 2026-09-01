@@ -18,10 +18,13 @@ from ..assistant import Assistant
 from ..clock import now_riyadh, parse_date
 from ..config import get_settings
 from ..db import get_session, init_db, session_scope
+from ..escalation import build_payload, notify
 from ..knowledge import KnowledgeError
 from ..models import Fact, Guest, HandoffRecord, StaffUser, Tenant, Ticket
 from ..repository import (
     audit,
+    count_unverified_guests,
+    expiring_facts,
     conversation_history,
     get_tenant,
     knowledge_gaps,
@@ -130,6 +133,7 @@ def _render(
         "page": page,
         "open_tickets": len(list_tickets(session, principal.tenant.id, status="open", limit=999)),
         "open_handoffs": len(list_handoffs(session, principal.tenant.id, status="open", limit=999)),
+        "unverified_guests": count_unverified_guests(session, principal.tenant.id),
         "flash": request.query_params.get("ok") and principal.t("saved"),
         "flash_kind": "ok",
     }
@@ -203,6 +207,9 @@ def overview(
         language_names=LANGUAGE_NAMES,
         cache_rate=cache_rate,
         fact_count=len(list_facts(session, tenant_id, only_active=True)),
+        expiring=expiring_facts(session, tenant_id),
+        today=date.today(),
+        effective_season=principal.tenant.effective_season(date.today()),
     )
 
 
@@ -225,6 +232,7 @@ def knowledge_page(
         next_key=next_fact_key(session, principal.tenant.id),
         today=date.today(),
         prefill=from_gap,
+        expiring=expiring_facts(session, principal.tenant.id),
     )
 
 
@@ -309,6 +317,54 @@ def _validate_or_raise(session: Session, tenant_id: int) -> None:
     except KnowledgeError:
         session.rollback()
         raise
+
+
+# ---------------------------------------------------------------------------
+# النزلاء والغرف
+# ---------------------------------------------------------------------------
+
+@app.get("/guests", response_class=HTMLResponse)
+def guests_page(
+    request: Request,
+    session: Session = Depends(get_session),
+    principal: Principal | None = Depends(current_principal),
+) -> Response:
+    if principal is None:
+        return _login_redirect()
+    guests = list_guests(session, principal.tenant.id, limit=400)
+    return _render(
+        request, session, principal, "guests.html", "guests",
+        guests=guests,
+        unverified_count=sum(1 for g in guests if not g.room_verified),
+    )
+
+
+@app.post("/guests/{guest_id}/update")
+def guest_update(
+    guest_id: int,
+    name: str = Form(default=""),
+    room: str = Form(default=""),
+    group_mode: str = Form(default="individual"),
+    group_rooms: str = Form(default=""),
+    session: Session = Depends(get_session),
+    principal: Principal | None = Depends(current_principal),
+) -> Response:
+    if principal is None:
+        return _login_redirect()
+    guest = session.get(Guest, guest_id)
+    if guest is None or guest.tenant_id != principal.tenant.id:
+        return RedirectResponse("/guests", status_code=303)
+    guest.name = name.strip()
+    guest.room = room.strip()
+    guest.group_mode = group_mode if group_mode in ("individual", "group_leader") else "individual"
+    # قائمة الغرف بلا معنى خارج وضع المطوّف — تُفرَّغ حتى لا تمنح صلاحية صامتة.
+    guest.group_rooms = group_rooms.strip() if guest.group_mode == "group_leader" else ""
+    audit(
+        session, principal.tenant.id, principal.user.email, "guest.update",
+        entity="guest", entity_id=guest.wa_id,
+        detail=f"room={guest.room} mode={guest.group_mode} rooms={guest.group_rooms}",
+    )
+    return RedirectResponse("/guests?ok=1", status_code=303)
 
 
 # ---------------------------------------------------------------------------
@@ -480,7 +536,10 @@ def settings_page(
 ) -> Response:
     if principal is None:
         return _login_redirect()
-    return _render(request, session, principal, "settings.html", "settings")
+    return _render(
+        request, session, principal, "settings.html", "settings",
+        effective_season=principal.tenant.effective_season(date.today()),
+    )
 
 
 @app.post("/settings")
@@ -502,6 +561,31 @@ def settings_save(
         tenant.desk_status = desk_status
     tenant.hk_window = hk_window.strip() or tenant.hk_window
     audit(session, tenant.id, principal.user.email, "settings.update", detail=f"{season}/{desk_status}")
+    return RedirectResponse("/settings?ok=1", status_code=303)
+
+
+@app.post("/settings/seasons")
+def settings_seasons(
+    season_auto: str = Form(default=""),
+    ramadan_start: str = Form(default=""),
+    ramadan_end: str = Form(default=""),
+    hajj_start: str = Form(default=""),
+    hajj_end: str = Form(default=""),
+    escalation_webhook: str = Form(default=""),
+    session: Session = Depends(get_session),
+    principal: Principal | None = Depends(current_principal),
+) -> Response:
+    if principal is None:
+        return _login_redirect()
+    tenant = principal.tenant
+    tenant.season_auto = bool(season_auto)
+    tenant.ramadan_start = parse_date(ramadan_start)
+    tenant.ramadan_end = parse_date(ramadan_end)
+    tenant.hajj_start = parse_date(hajj_start)
+    tenant.hajj_end = parse_date(hajj_end)
+    tenant.escalation_webhook = escalation_webhook.strip()
+    audit(session, tenant.id, principal.user.email, "settings.seasons",
+          detail=f"auto={tenant.season_auto}")
     return RedirectResponse("/settings?ok=1", status_code=303)
 
 
@@ -600,6 +684,18 @@ def _process_inbound(inbound) -> None:
             escalate = outcome.escalate
             tenant_token = tenant.wa_access_token
             phone_id = tenant.wa_phone_number_id
+            escalation_url = tenant.escalation_webhook
+            escalation_payload = (
+                build_payload(
+                    tenant.name,
+                    outcome.ticket.room if outcome.ticket else "",
+                    outcome.ticket.detail if outcome.ticket else "",
+                    outcome.ticket.urgency if outcome.ticket else "urgent",
+                    inbound.wa_id,
+                )
+                if escalate
+                else None
+            )
 
         if not reply_text.strip() or not tenant_token or not phone_id:
             return
@@ -610,9 +706,14 @@ def _process_inbound(inbound) -> None:
         client.mark_read(inbound.message_id)
         client.send_text(inbound.wa_id, reply_text, reply_to=inbound.message_id)
 
-        if escalate:
-            logger.error(
-                "تصعيد عاجل: الاستقبال غير مشغّل وطلب عاجل من %s", inbound.wa_id
+        if escalate and escalation_payload is not None:
+            # الرد وصل النزيل أصلًا؛ فشل التصعيد يُسجَّل ولا يُسقط المعالجة.
+            delivered = notify(escalation_url, escalation_payload)
+            logger.log(
+                logging.INFO if delivered else logging.ERROR,
+                "تصعيد عاجل من %s — %s",
+                inbound.wa_id,
+                "أُرسل" if delivered else "تعذّر الإرسال",
             )
     except Exception:  # noqa: BLE001
         logger.exception("فشل معالجة رسالة واردة من %s", inbound.wa_id)

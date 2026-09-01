@@ -1,0 +1,59 @@
+{% extends "_layout.html" %}
+{% block title %}{{ t('nav_guests') }}{% endblock %}
+{% block heading %}{{ t('guests_title') }}{% endblock %}
+{% block subtitle %}{{ t('guests_intro') }}{% endblock %}
+
+{% block content %}
+<section class="card">
+  <div class="card-head">
+    <h2>{{ t('nav_guests') }}</h2>
+    <span class="badge">{{ guests | length }}</span>
+    {% if unverified_count %}<span class="badge amber">{{ unverified_count }} {{ t('unverified') }}</span>{% endif %}
+  </div>
+  <div class="card-body tight">
+    {% if guests %}
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>{{ t('guest_wa') }}</th><th>{{ t('guest_name') }}</th>
+          <th>{{ t('room') }}</th><th>{{ t('guest_group_mode') }}</th>
+          <th>{{ t('group_rooms') }}</th><th>{{ t('last_seen') }}</th>
+          <th class="num">{{ t('actions') }}</th>
+        </tr></thead>
+        <tbody>
+        {% for g in guests %}
+        <tr>
+          <form method="post" action="/guests/{{ g.id }}/update">
+          <td class="nowrap mono cell-main">{{ g.wa_id }}</td>
+          <td><input type="text" name="name" value="{{ g.name }}" style="min-width:120px"></td>
+          <td>
+            <input type="text" name="room" dir="ltr" value="{{ g.room }}" style="max-width:88px"
+                   placeholder="—">
+            {% if not g.room %}<div class="cell-sub" style="color:var(--amber)">{{ t('unverified') }}</div>{% endif %}
+          </td>
+          <td>
+            <select name="group_mode" style="min-width:130px">
+              <option value="individual" {{ 'selected' if g.group_mode != 'group_leader' }}>{{ t('group_individual') }}</option>
+              <option value="group_leader" {{ 'selected' if g.group_mode == 'group_leader' }}>{{ t('group_leader') }}</option>
+            </select>
+          </td>
+          <td>
+            <input type="text" name="group_rooms" dir="ltr" value="{{ g.group_rooms }}"
+                   placeholder="501, 502, 503" style="min-width:160px"
+                   {{ 'disabled' if g.group_mode != 'group_leader' }}>
+          </td>
+          <td class="nowrap num muted">{{ g.last_seen_at.strftime('%m-%d %H:%M') if g.last_seen_at else '—' }}</td>
+          <td class="nowrap num">
+            <button class="btn sm primary" type="submit">{{ t('save') }}</button>
+            <a class="btn sm ghost" href="/conversations?guest={{ g.id }}">{{ t('open_chat') }}</a>
+          </td>
+          </form>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}<div class="empty">{{ t('no_data') }}</div>{% endif %}
+  </div>
+</section>
+{% endblock %}
