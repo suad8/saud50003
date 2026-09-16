@@ -380,3 +380,72 @@ class AuditLog(Base):
     entity_id: Mapped[str] = mapped_column(String(64), default="")
     detail: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
+
+
+class Stay(Base):
+    """إقامة واحدة في غرفة واحدة — من التسجيل إلى المغادرة.
+
+    هذا هو مفتاح الأمان كله. الملصق على الجدار ثابت ومكشوف: أي أحد مرّ
+    بالغرفة يقدر يصوّره، ونزيل غادر من شهر يظل الرابط في سجل متصفحه. فالرابط
+    لا يصلح مفتاحًا أبدًا.
+
+    الترتيب الصحيح: الملصق يدلّ على الغرفة، والإقامة هي التي تمنح الدخول.
+    لا دخول إلا وهناك إقامة مفتوحة، وكل رسالة تُفحص مقابلها — لا عند فتح
+    الجلسة وحدها. إغلاق الإقامة يقتل كل أجهزتها في نفس اللحظة.
+    """
+
+    __tablename__ = "stays"
+    __table_args__ = (
+        Index("ix_stay_tenant_room_status", "tenant_id", "room", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), index=True)
+    room: Mapped[str] = mapped_column(String(16), index=True)
+    guest_name: Mapped[str] = mapped_column(String(120), default="")
+    # آخر أربعة أرقام من جوال النزيل كما سُجّلت عند الوصول. تُستخدم للتحقق
+    # في وضع الملصق الثابت، ولا يُخزَّن الرقم كاملًا هنا.
+    phone_last4: Mapped[str] = mapped_column(String(4), default="")
+    # رمز الإقامة في وضع «كود لكل إقامة» — يُطبع على ظرف بطاقة الغرفة.
+    stay_code: Mapped[str] = mapped_column(String(16), default="", index=True)
+
+    status: Mapped[str] = mapped_column(String(16), default="open")  # open|closed
+    opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    # الحدّ الأقصى المطلق. يُحسب من تاريخ المغادرة المحجوز، ويسري حتى لو نسي
+    # الفندق يقفل الإقامة أو انقطع التكامل مع نظام إدارة الفنادق.
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    closed_by: Mapped[str] = mapped_column(String(64), default="")  # pms|desk|expiry
+
+    # نافذة التفعيل في وضع «الاستقبال يفعّل الغرفة»: أول مسح داخلها يربط بلا سؤال.
+    armed_until: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    devices: Mapped[list["StayDevice"]] = relationship(
+        back_populates="stay", cascade="all, delete-orphan", lazy="selectin"
+    )
+
+
+class StayDevice(Base):
+    """جهاز مربوط بإقامة.
+
+    الربط بكوكي موقّع على الجهاز نفسه، فلا ينتقل بنسخ الرابط. عدد الأجهزة
+    محدود لأن العائلة الواحدة تدخل من أكثر من جوال، لكن غرفة بعشرين جهازًا
+    ليست عائلة.
+    """
+
+    __tablename__ = "stay_devices"
+    __table_args__ = (
+        UniqueConstraint("stay_id", "token_hash", name="uq_device_stay_token"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    stay_id: Mapped[int] = mapped_column(ForeignKey("stays.id", ondelete="CASCADE"), index=True)
+    # لا نخزّن الرمز نفسه — فتسريب قاعدة البيانات لا يمنح أحدًا جلسة.
+    token_hash: Mapped[str] = mapped_column(String(64), index=True)
+    label: Mapped[str] = mapped_column(String(120), default="")
+    language: Mapped[str] = mapped_column(String(8), default="")
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    stay: Mapped["Stay"] = relationship(back_populates="devices")
