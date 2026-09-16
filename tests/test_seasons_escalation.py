@@ -6,6 +6,7 @@ from datetime import date, timedelta
 
 import pytest
 
+from daif.clock import now_riyadh
 from daif.escalation import build_payload, notify
 from daif.models import Fact, Tenant
 from daif.repository import expiring_facts
@@ -59,8 +60,12 @@ def test_service_context_uses_effective_season(db):
     from daif.models import Guest
     from daif.service import build_context
 
+    # اليوم بتوقيت الرياض، مثل ما يحسبه الكود بالضبط. لو استخدمنا date.today()
+    # (توقيت الخادم) يفشل الاختبار كل ليلة بين ٩ و١٢ بتوقيت UTC، لأن الرياض
+    # تكون دخلت اليوم التالي والنافذة يوم واحد.
+    riyadh_today = now_riyadh().date()
     hotel = scheduled_hotel(season="normal", season_auto=True,
-                            ramadan_start=date.today(), ramadan_end=date.today())
+                            ramadan_start=riyadh_today, ramadan_end=riyadh_today)
     db.add(hotel)
     db.flush()
     guest = Guest(tenant_id=hotel.id, wa_id="1", room="402")
