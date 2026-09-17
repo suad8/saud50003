@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ملصقات الغرف · {{ tenant.name }}</title>
+<style>
+  :root{ --brand:#0f3d2e; --ink:#132019; --ink-2:#5b6b63; --line:#d8e2dc; }
+  *{box-sizing:border-box}
+  body{margin:0; padding:22px; background:#f2f5f3; color:var(--ink);
+    font-family:"IBM Plex Sans Arabic",system-ui,-apple-system,"Segoe UI",sans-serif}
+  .bar{max-width:980px; margin:0 auto 18px; display:flex; gap:12px; align-items:center;
+    flex-wrap:wrap; background:#fff; border:1px solid var(--line); border-radius:14px; padding:15px 18px}
+  .bar h1{margin:0; font-size:1.05rem; flex:1 1 220px}
+  .bar form{display:flex; gap:8px; align-items:center; flex-wrap:wrap}
+  .bar input{font:inherit; padding:9px 12px; border-radius:10px; border:1px solid var(--line); min-width:220px}
+  .btn{font:inherit; font-weight:600; padding:9px 15px; border-radius:10px; border:1px solid var(--line);
+    background:#fff; color:var(--ink); cursor:pointer; text-decoration:none}
+  .btn.p{background:var(--brand); border-color:var(--brand); color:#fff}
+  .note{max-width:980px; margin:0 auto 16px; color:var(--ink-2); font-size:.86rem; line-height:1.7}
+  .sheet{max-width:980px; margin:0 auto; display:grid;
+    grid-template-columns:repeat(auto-fill,minmax(224px,1fr)); gap:14px}
+  .st{background:#fff; border:1px solid var(--line); border-radius:14px; padding:16px 14px;
+    text-align:center; break-inside:avoid}
+  .st .hotel{font-size:.78rem; font-weight:700; color:var(--brand); margin-bottom:9px}
+  .st svg{display:block; width:148px; height:148px; margin:0 auto}
+  .st .room{font-size:1.5rem; font-weight:700; color:var(--brand); margin-top:9px; letter-spacing:.02em}
+  .st .cta{font-size:.72rem; color:var(--ink-2); margin-top:3px; line-height:1.5}
+  @media print{
+    body{background:#fff; padding:0}
+    .bar, .note{display:none}
+    .sheet{max-width:none; gap:0; grid-template-columns:repeat(3,1fr)}
+    .st{border:1px dashed #bbb; border-radius:0; page-break-inside:avoid; padding:20px 10px}
+  }
+</style>
+</head>
+<body>
+<div class="bar">
+  <h1>ملصقات الغرف · {{ tenant.name }} <span style="color:var(--ink-2); font-weight:400">({{ count }})</span></h1>
+  <form method="get" action="/stays/stickers">
+    <input name="rooms" value="{{ rooms_raw }}" placeholder="401-410، 501، 502" aria-label="الغرف">
+    <button class="btn" type="submit">ولّد</button>
+  </form>
+  <button class="btn p" type="button" onclick="window.print()">اطبع</button>
+  <a class="btn" href="/stays">رجوع</a>
+</div>
+
+<p class="note">
+  الملصق ما فيه اسم ولا رقم حجز — بس الفندق والغرفة وتوقيعها. يعني لو صوّره أي أحد أو انتشر، ما ياخذ منه شي:
+  الدخول تقرّره الإقامة المفتوحة لا الملصق. اطبعها مرة وحدة عند التركيب، والصقها داخل الغرفة.
+  <strong>تغيير سرّ المنصة يُبطل كل اللي طُبع ويفرض إعادة الطباعة.</strong>
+</p>
+
+<div class="sheet">
+  {% for s in stickers %}
+  <div class="st">
+    <div class="hotel">{{ tenant.name }}</div>
+    {{ s.svg | safe }}
+    <div class="room">غرفة {{ s.room }}</div>
+    <div class="cta">امسح الكود بكاميرا جوالك<br>واسأل عن أي شي</div>
+  </div>
+  {% else %}
+  <p class="note">ما فيه غرف بعد. اكتب مدى فوق، مثل <code>401-410</code>.</p>
+  {% endfor %}
+</div>
+</body>
+</html>

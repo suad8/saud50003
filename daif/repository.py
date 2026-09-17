@@ -522,3 +522,43 @@ def audit(
             detail=detail,
         )
     )
+
+
+# --- الإقامات ---------------------------------------------------------------
+
+def list_stays(session: Session, tenant_id: int, *, status: str = "open",
+               limit: int = 300):
+    """إقامات الفندق، الأحدث أولًا."""
+    from .models import Stay
+
+    query = select(Stay).where(Stay.tenant_id == tenant_id)
+    if status:
+        query = query.where(Stay.status == status)
+    return list(session.scalars(query.order_by(Stay.opened_at.desc()).limit(limit)))
+
+
+def stay_for(session: Session, tenant_id: int, stay_id: int):
+    """إقامة واحدة، بشرط أنها لهذا الفندق. العزل يسري هنا كما في كل استعلام."""
+    from .models import Stay
+
+    return session.scalar(
+        select(Stay).where(Stay.id == stay_id, Stay.tenant_id == tenant_id)
+    )
+
+
+def hotel_rooms(session: Session, tenant_id: int) -> list[str]:
+    """أرقام الغرف التي عرفها النظام — من الإقامات ومن النزلاء.
+
+    مصدرها العمل نفسه لا قائمة تُدخَل يدويًا: الفندق لا يحتاج إدخال ٩٢ غرفة
+    قبل أن يبدأ، والقائمة تنمو معه. ومن أراد ملصقات كل الغرف فورًا يكتب
+    المدى في صفحة الطباعة.
+    """
+    from .models import Guest, Stay
+
+    rooms = set(session.scalars(
+        select(Stay.room).where(Stay.tenant_id == tenant_id).distinct()
+    ).all())
+    rooms |= set(session.scalars(
+        select(Guest.room).where(Guest.tenant_id == tenant_id, Guest.room != "").distinct()
+    ).all())
+    return sorted(r for r in rooms if r)

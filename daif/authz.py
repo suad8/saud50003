@@ -21,6 +21,7 @@ VIEW_GUESTS = "view.guests"
 VIEW_TICKETS = "view.tickets"
 VIEW_HANDOFFS = "view.handoffs"
 VIEW_CONVERSATIONS = "view.conversations"
+VIEW_STAYS = "view.stays"
 VIEW_KNOWLEDGE = "view.knowledge"
 VIEW_GAPS = "view.gaps"
 VIEW_SIMULATOR = "view.simulator"
@@ -30,6 +31,7 @@ VIEW_BILLING = "view.billing"
 WRITE_GUESTS = "write.guests"
 WRITE_TICKETS = "write.tickets"
 WRITE_HANDOFFS = "write.handoffs"
+WRITE_STAYS = "write.stays"        # تسجيل الوصول والمغادرة — عمل الاستقبال
 WRITE_KNOWLEDGE = "write.knowledge"
 WRITE_SETTINGS = "write.settings"
 WRITE_WHATSAPP = "write.whatsapp"       # يكشف رمز الوصول — للمالك وحده
@@ -39,7 +41,7 @@ WRITE_USERS = "write.users"
 # موظف الاستقبال والتدبير: يشغّل اليوم، ولا يغيّر ما يقوله المساعد.
 _STAFF: Final = frozenset({
     VIEW_OVERVIEW, VIEW_GUESTS, VIEW_TICKETS, VIEW_HANDOFFS, VIEW_CONVERSATIONS,
-    WRITE_GUESTS, WRITE_TICKETS, WRITE_HANDOFFS,
+    VIEW_STAYS, WRITE_GUESTS, WRITE_TICKETS, WRITE_HANDOFFS, WRITE_STAYS,
 })
 
 # المدير: يملك ما يقوله المساعد وكيف يتصرّف.

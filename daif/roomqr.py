@@ -81,6 +81,25 @@ def sticker_url(base_url: str, tenant_slug: str, room: str, version: str = "1") 
     return base_url.rstrip("/") + sticker_path(tenant_slug, room, version)
 
 
+def qr_svg(url: str, scale: int = 4) -> str:
+    """رمز QR جاهز للطباعة.
+
+    SVG مضمّن لا صورة: يطبع حادًّا على أي مقاس، ولا يحتاج طلبًا ثانيًا من
+    الخادم — وصفحة ملصقات لتسعين غرفة كانت ستصير تسعين طلبًا.
+    مستوى تصحيح الخطأ متوسط: الملصق يُلصق على جدار وقد يُخدش أو يتسخ.
+    """
+    import io as _io
+
+    import segno
+
+    buf = _io.BytesIO()
+    segno.make(url, error="m", micro=False).save(
+        buf, kind="svg", scale=scale, border=4,
+        dark="#0f3d2e", light="#ffffff", xmldecl=False, svgclass=None, lineclass=None,
+    )
+    return buf.getvalue().decode("utf-8")
+
+
 @dataclass(frozen=True)
 class Sticker:
     """ملصق غرفة واحدة، جاهز للطباعة."""
@@ -88,6 +107,10 @@ class Sticker:
     room: str
     url: str
     version: str = "1"
+
+    @property
+    def svg(self) -> str:
+        return qr_svg(self.url)
 
 
 def sheet(base_url: str, tenant_slug: str, rooms: list[str],

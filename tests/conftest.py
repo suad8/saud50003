@@ -93,3 +93,17 @@ def fake_reply():
         return Client()
 
     return build
+
+
+@pytest.fixture(autouse=True)
+def _fresh_rate_limits():
+    """مُحدِّد المعدّل كائن واحد للعملية كلها.
+
+    بلا هذا، ملفّ اختبارات يسجّل الدخول أكثر من ثماني مرات يخنق نفسه: ينجح
+    منفردًا ويفشل ضمن المجموعة. وهو فشل لا علاقة له بما يقيسه الاختبار.
+    """
+    from daif.ratelimit import limiter
+
+    with limiter._lock:
+        limiter._hits.clear()
+    yield

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import replace
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 from fastapi import (
@@ -41,7 +41,10 @@ from ..reports import (
     tickets_csv,
 )
 from ..ratelimit import LOGIN, WEBHOOK, limiter
-from ..models import Fact, Guest, HandoffRecord, Message, StaffUser, Tenant, Ticket
+from .. import roomqr, stay as stay_mod
+from ..models import (
+    AuditLog, Fact, Guest, HandoffRecord, Message, StaffUser, Tenant, Ticket,
+)
 from ..repository import (
     audit,
     count_active_owners,
@@ -55,10 +58,13 @@ from ..repository import (
     list_handoffs,
     list_messages,
     list_staff,
+    list_stays,
     list_tickets,
     load_knowledge_base,
     next_fact_key,
+    hotel_rooms,
     onboarding_state,
+    stay_for,
     search_facts,
     staff_by_email,
     stats,
@@ -227,6 +233,7 @@ PAGE_PERMISSION: dict[str, str] = {
     "tickets": authz.VIEW_TICKETS,
     "handoffs": authz.VIEW_HANDOFFS,
     "conversations": authz.VIEW_CONVERSATIONS,
+    "stays": authz.VIEW_STAYS,
     "gaps": authz.VIEW_GAPS,
     "simulator": authz.VIEW_SIMULATOR,
     "settings": authz.VIEW_SETTINGS,
@@ -271,6 +278,7 @@ def _render(
         "open_tickets": len(list_tickets(session, principal.tenant.id, status="open", limit=999)),
         "open_handoffs": len(list_handoffs(session, principal.tenant.id, status="open", limit=999)),
         "unverified_guests": count_unverified_guests(session, principal.tenant.id),
+        "open_stays": len(list_stays(session, principal.tenant.id, status="open")),
         "flash": request.query_params.get("ok") and principal.t("saved"),
         "flash_kind": "ok",
     }
@@ -687,6 +695,167 @@ def conversation_reply(
         row.status = "closed"
     session.commit()
     return RedirectResponse(f"/conversations?guest={guest_id}", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# الإقامات — تسجيل الوصول والمغادرة، ومن يدخل الشات من أي جهاز
+# ---------------------------------------------------------------------------
+
+@app.get("/stays", response_class=HTMLResponse)
+def stays_page(
+    request: Request,
+    show: str = Query(default="open"),
+    session: Session = Depends(get_session),
+    principal: Principal | None = Depends(current_principal),
+) -> Response:
+    if principal is None:
+        return _login_redirect()
+    status = "" if show == "all" else "open"
+    rows = list_stays(session, principal.tenant.id, status=status)
+    return _render(
+        request, session, principal, "stays.html", "stays",
+        stays=rows, show=show, modes=stay_mod.MODES,
+        max_devices=stay_mod.MAX_DEVICES,
+        base_url=str(request.base_url).rstrip("/"),
+    )
+
+
+@app.post("/stays/checkin")
+def stay_checkin(
+    request: Request,
+    room: str = Form(""),
+    guest_name: str = Form(""),
+    phone: str = Form(""),
+    nights: int = Form(1),
+    session: Session = Depends(get_session),
+    principal: Principal | None = Depends(current_principal),
+) -> Response:
+    """تسجيل وصول. يقفل تلقائيًا أي إقامة سابقة في الغرفة — وهي اللحظة التي
+    ينقطع فيها اتصال من غادر، حتى لو نسي الاستقبال تسجيل مغادرته."""
+    if principal is None:
+        return _login_redirect()
+    _require(principal, authz.WRITE_STAYS)
+
+    room = (room or "").strip()
+    if not room:
+        return RedirectResponse("/stays", status_code=303)
+
+    checkout = (now_riyadh() + timedelta(days=max(1, min(int(nights or 1), 60)))).date()
+    stay = stay_mod.open_stay(
+        session, principal.tenant.id, room,
+        guest_name=guest_name.strip(), phone=phone.strip(),
+        checkout_on=checkout, mode=principal.tenant.access_mode or "stay_code",
+    )
+    session.add(AuditLog(
+        tenant_id=principal.tenant.id, actor=principal.user.email,
+        action="stay.checkin", entity="stay", entity_id=str(stay.id),
+        detail=f"غرفة {room}",
+    ))
+    session.commit()
+    return RedirectResponse(f"/stays?new={stay.id}", status_code=303)
+
+
+@app.post("/stays/{stay_id}/checkout")
+def stay_checkout(
+    request: Request,
+    stay_id: int,
+    session: Session = Depends(get_session),
+    principal: Principal | None = Depends(current_principal),
+) -> Response:
+    if principal is None:
+        return _login_redirect()
+    _require(principal, authz.WRITE_STAYS)
+
+    stay = stay_for(session, principal.tenant.id, stay_id)
+    if stay is None:
+        raise HTTPException(status_code=404, detail="إقامة غير معروفة")
+    stay_mod.close_stay(session, stay, by="desk")
+    session.add(AuditLog(
+        tenant_id=principal.tenant.id, actor=principal.user.email,
+        action="stay.checkout", entity="stay", entity_id=str(stay.id),
+        detail=f"غرفة {stay.room} — أُسقطت {len(stay.devices)} جهازًا",
+    ))
+    session.commit()
+    return RedirectResponse("/stays?ok=1", status_code=303)
+
+
+@app.post("/stays/{stay_id}/devices/{device_id}/revoke")
+def stay_revoke_device(
+    request: Request,
+    stay_id: int,
+    device_id: int,
+    session: Session = Depends(get_session),
+    principal: Principal | None = Depends(current_principal),
+) -> Response:
+    """سحب جهاز واحد دون إنهاء الإقامة — لنزيل فقد جواله أو شارك الرابط."""
+    if principal is None:
+        return _login_redirect()
+    _require(principal, authz.WRITE_STAYS)
+
+    stay = stay_for(session, principal.tenant.id, stay_id)
+    if stay is None:
+        raise HTTPException(status_code=404, detail="إقامة غير معروفة")
+    for device in stay.devices:
+        if device.id == device_id and device.revoked_at is None:
+            device.revoked_at = now_riyadh()
+            session.add(AuditLog(
+                tenant_id=principal.tenant.id, actor=principal.user.email,
+                action="stay.device_revoked", entity="stay_device",
+                entity_id=str(device_id), detail=f"غرفة {stay.room}",
+            ))
+    session.commit()
+    return RedirectResponse("/stays?ok=1", status_code=303)
+
+
+@app.get("/stays/stickers", response_class=HTMLResponse)
+def stickers_page(
+    request: Request,
+    rooms: str = Query(default=""),
+    session: Session = Depends(get_session),
+    principal: Principal | None = Depends(current_principal),
+) -> Response:
+    """ورقة ملصقات جاهزة للطباعة — تُطبع مرة عند التركيب.
+
+    الطباعة إعداد لا تشغيل، فهي للمدير. وتغيير سرّ الفندق يُبطل كل ما طُبع
+    ويفرض إعادة الطباعة، وهذا هو المقصود.
+    """
+    if principal is None:
+        return _login_redirect()
+    _require(principal, authz.WRITE_SETTINGS)
+
+    wanted = _room_list(rooms) or hotel_rooms(session, principal.tenant.id)
+    base = str(request.base_url).rstrip("/")
+    sheet = roomqr.sheet(base, principal.tenant.slug, wanted)
+    return _template(request, "stickers.html", {
+        "t": principal.t, "tenant": principal.tenant, "stickers": sheet,
+        "rooms_raw": rooms, "count": len(sheet), "page": "stays",
+        "can": lambda permission: authz.can(principal.user.role, permission),
+    })
+
+
+def _room_list(raw: str) -> list[str]:
+    """«401-410, 501, 502» تصير قائمة غرف.
+
+    الفندق يفكّر بالأدوار والمدَيات لا بغرفة غرفة، وكتابة تسعين رقمًا يدويًا
+    قبل طباعة أول ملصق سبب كافٍ لترك النظام كله.
+    """
+    out: list[str] = []
+    for chunk in (raw or "").replace("،", ",").split(","):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        if "-" in chunk:
+            lo, _, hi = chunk.partition("-")
+            lo, hi = lo.strip(), hi.strip()
+            if lo.isdigit() and hi.isdigit() and int(lo) <= int(hi):
+                width = len(lo)
+                # مدى مفتوح يولّد آلاف الملصقات ويعلّق المتصفح. مئتان تكفي فندقًا.
+                for n in range(int(lo), min(int(hi), int(lo) + 199) + 1):
+                    out.append(str(n).zfill(width))
+                continue
+        out.append(chunk)
+    seen: set[str] = set()
+    return [r for r in out if not (r in seen or seen.add(r))]
 
 
 @app.get("/gaps", response_class=HTMLResponse)

@@ -1,0 +1,112 @@
+{% extends "_layout.html" %}
+{% block title %}{{ t('nav_stays') }}{% endblock %}
+{% block heading %}الإقامات{% endblock %}
+{% block subtitle %}من ساكن الآن، ومن يدخل الشات من أي جهاز. تسجيل المغادرة يقطع كل أجهزة الغرفة في نفس اللحظة.{% endblock %}
+
+{% block topbar_extra %}
+<div class="row right">
+  <a class="btn sm {{ 'primary' if show == 'open' }}" href="/stays">المفتوحة</a>
+  <a class="btn sm {{ 'primary' if show == 'all' }}" href="/stays?show=all">الكل</a>
+  {% if can('write.settings') %}
+  <a class="btn sm" href="/stays/stickers">طباعة ملصقات الغرف</a>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block content %}
+{% if can('write.stays') %}
+<section class="card">
+  <div class="card-head"><h2>تسجيل وصول</h2>
+    <span class="note">لو الغرفة فيها إقامة مفتوحة، تُقفل تلقائيًا — وهذي اللحظة اللي ينقطع فيها اللي قبله.</span>
+  </div>
+  <div class="card-body">
+    <form method="post" action="/stays/checkin" class="row wrap" style="gap:10px; align-items:flex-end">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="field" style="min-width:110px">
+        <label for="room">الغرفة</label>
+        <input id="room" name="room" required inputmode="numeric" autocomplete="off">
+      </div>
+      <div class="field" style="min-width:190px">
+        <label for="guest_name">اسم النزيل</label>
+        <input id="guest_name" name="guest_name" autocomplete="off">
+      </div>
+      <div class="field" style="min-width:170px">
+        <label for="phone">الجوال</label>
+        <input id="phone" name="phone" inputmode="tel" autocomplete="off"
+               placeholder="9665…">
+      </div>
+      <div class="field" style="min-width:90px">
+        <label for="nights">ليالٍ</label>
+        <input id="nights" name="nights" type="number" min="1" max="60" value="3">
+      </div>
+      <button class="btn primary" type="submit">سجّل الوصول</button>
+    </form>
+    <p class="note" style="margin:12px 0 0">
+      وضع الدخول الحالي:
+      <strong>{{ {'stay_code':'كود مطبوع لكل إقامة','phone_last4':'آخر ٤ أرقام من الجوال','desk_arm':'تفعيل من الاستقبال'}[tenant.access_mode or 'stay_code'] }}</strong>
+      — يتغيّر من الإعدادات.
+    </p>
+  </div>
+</section>
+{% endif %}
+
+<section class="card">
+  <div class="card-head"><h2>{{ 'الإقامات المفتوحة' if show == 'open' else 'كل الإقامات' }}</h2>
+    <span class="note">{{ stays|length }} إقامة</span></div>
+  <div class="card-body tight">
+    {% if stays %}
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>الغرفة</th><th>النزيل</th><th>الكود</th><th>من</th>
+          <th>تنتهي</th><th>الأجهزة</th><th>الحالة</th><th class="num">إجراء</th>
+        </tr></thead>
+        <tbody>
+        {% for s in stays %}
+        {% set live = s.devices | selectattr('revoked_at', 'none') | list %}
+        <tr{% if request.query_params.get('new')|int == s.id %} class="fresh"{% endif %}>
+          <td class="nowrap mono cell-main">{{ s.room }}</td>
+          <td>{{ s.guest_name or '—' }}
+            {%- if s.phone_last4 %}<div class="sub mono">••••{{ s.phone_last4 }}</div>{% endif -%}</td>
+          <td class="nowrap">
+            {% if s.stay_code %}<code class="pill">{{ s.stay_code }}</code>
+            {% else %}<span class="muted">—</span>{% endif %}</td>
+          <td class="nowrap num muted">{{ s.opened_at.strftime('%m-%d %H:%M') }}</td>
+          <td class="nowrap num muted">{{ s.expires_at.strftime('%m-%d %H:%M') }}</td>
+          <td class="nowrap">
+            {% if live %}
+              {% for d in live %}
+              <form method="post" action="/stays/{{ s.id }}/devices/{{ d.id }}/revoke"
+                    style="display:inline-block; margin-inline-end:5px">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button class="btn sm" type="submit"
+                        title="سحب هذا الجهاز بلا إنهاء الإقامة">
+                  {{ d.language or '?' }} · {{ d.last_seen_at.strftime('%H:%M') }} ✕</button>
+              </form>
+              {% endfor %}
+              <span class="muted sub">{{ live|length }} / {{ max_devices }}</span>
+            {% else %}<span class="muted">ما دخل أحد بعد</span>{% endif %}
+          </td>
+          <td class="nowrap">
+            {% if s.status == 'open' %}<span class="pill ok">مفتوحة</span>
+            {% else %}<span class="pill">أُغلقت · {{ {'pms':'نظام الفندق','desk':'الاستقبال','expiry':'انتهت المهلة'}.get(s.closed_by, s.closed_by) }}</span>{% endif %}
+          </td>
+          <td class="num nowrap">
+            {% if s.status == 'open' and can('write.stays') %}
+            <form method="post" action="/stays/{{ s.id }}/checkout">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="btn sm danger" type="submit">مغادرة</button>
+            </form>
+            {% else %}—{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="empty">ما فيه إقامات. سجّل وصولًا من فوق.</p>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}
