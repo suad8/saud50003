@@ -6,3 +6,5 @@ __pycache__/
 *.egg-info/
 var/
 migrations/versions/__pycache__/
+demo.db
+seed_demo.py

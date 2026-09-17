@@ -49,7 +49,17 @@ def upgrade() -> None:
     )
 
 
+    op.add_column("tenants", sa.Column("access_mode", sa.String(16),
+                  nullable=False, server_default="stay_code"))
+
+    # من ردّ على النزيل: فراغ = المساعد، واسم = موظف.
+    op.add_column("messages",
+                  sa.Column("sent_by", sa.String(120), nullable=False, server_default=""))
+
+
 def downgrade() -> None:
+    op.drop_column("tenants", "access_mode")
+    op.drop_column("messages", "sent_by")
     op.drop_table("stay_devices")
     op.drop_index("ix_stay_tenant_room_status", table_name="stays")
     op.drop_table("stays")

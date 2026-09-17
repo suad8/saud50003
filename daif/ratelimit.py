@@ -24,6 +24,11 @@ class Limit:
 LOGIN = Limit(attempts=8, window=15 * 60)
 # الـwebhook: سخيّ لأنه مسار مشروع، لكنه ليس مفتوحًا بلا حد.
 WEBHOOK = Limit(attempts=600, window=60)
+# محاولات فتح جلسة نزيل من الملصق. الهدف إيقاف آلة تجرّب أكوادًا، لا معاقبة
+# حاجّ ضغط مرتين على شبكة بطيئة — فالحد سخيّ عمدًا.
+GUEST_ENTER = Limit(attempts=12, window=5 * 60)
+# رسائل النزيل في المحادثة.
+GUEST_SEND = Limit(attempts=30, window=5 * 60)
 
 
 class RateLimiter:

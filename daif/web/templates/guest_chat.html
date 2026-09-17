@@ -1,0 +1,63 @@
+{% extends "guest_base.html" %}
+{% block title %}محادثة · غرفة {{ room }}{% endblock %}
+{% block subtitle %}غرفة {{ room }} · يرد خلال ثوانٍ</span>{% endblock %}
+{% block style %}
+  .wrap{padding-bottom:0}
+  .chat{flex:1; display:flex; flex-direction:column; gap:10px; padding:6px 2px 14px; overflow-y:auto}
+  .msg{display:flex; flex-direction:column; max-width:82%}
+  .msg.me{align-self:flex-end; align-items:flex-end}
+  .msg.them{align-self:flex-start; align-items:flex-start}
+  .bub{padding:11px 14px; border-radius:16px; font-size:.95rem; line-height:1.65;
+    border:1px solid var(--line); overflow-wrap:anywhere}
+  .me .bub{background:var(--bubble-out); border-color:transparent}
+  .them .bub{background:var(--bubble-in)}
+  .bub.staff{background:var(--gold-soft); border-color:color-mix(in srgb,var(--gold) 40%,transparent)}
+  .from{display:block; font-size:.72rem; font-weight:700; color:var(--gold); margin-bottom:3px}
+  .at{font-size:.7rem; color:var(--ink-2); margin-top:3px; padding-inline:4px}
+  .tick{font-size:.72rem; color:var(--accent); font-weight:600; margin-top:3px; padding-inline:4px}
+  .quick{display:flex; gap:8px; overflow-x:auto; padding:10px 0; scrollbar-width:none}
+  .quick::-webkit-scrollbar{display:none}
+  .q{flex:none; display:flex; align-items:center; gap:6px; padding:9px 13px; border-radius:20px;
+    border:1px solid var(--line); background:var(--card); color:var(--ink);
+    font:inherit; font-size:.86rem; font-weight:600; cursor:pointer; white-space:nowrap; min-height:42px}
+  .q:disabled{opacity:.5}
+  .composer{display:flex; gap:8px; padding:8px 0 calc(14px + env(safe-area-inset-bottom));
+    position:sticky; bottom:0; background:var(--bg)}
+  .composer input{flex:1}
+  .composer .btn{flex:none; padding-inline:18px}
+  .sys{align-self:center; font-size:.8rem; color:var(--ink-2); background:var(--card);
+    border:1px solid var(--line); border-radius:12px; padding:8px 14px; text-align:center; max-width:90%}
+  footer{display:none}
+{% endblock %}
+{% block body %}
+<div class="chat" id="chat" role="log" aria-live="polite" aria-label="المحادثة"
+     data-last="{{ messages|selectattr('direction','equalto','out')|map(attribute='id')|list|last|default(0) }}">
+  {% if not messages %}
+  <p class="sys">اسأل عن أي شي، أو اضغط زر جاهز من تحت.</p>
+  {% endif %}
+  {% for m in messages %}
+  <div class="msg {{ 'me' if m.direction == 'in' else 'them' }}">
+    <div class="bub{{ ' staff' if m.sent_by else '' }}">
+      {%- if m.sent_by %}<span class="from">{{ m.sent_by }}</span>{% endif -%}
+      {{ m.text }}</div>
+    <span class="at">{{ m.created_at.strftime('%H:%M') }}</span>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="quick" role="group" aria-label="أسئلة سريعة">
+  {% for s in shortcuts %}
+  <button class="q" type="button" data-say="{{ s.text }}" data-key="{{ s.key }}">
+    <span aria-hidden="true">{{ s.icon }}</span>{{ s.label }}</button>
+  {% endfor %}
+</div>
+
+<form class="composer" id="f" autocomplete="off">
+  <input id="t" name="text" placeholder="اكتب رسالتك…" aria-label="رسالتك" maxlength="1000" required>
+  <button class="btn p" type="submit">إرسال</button>
+</form>
+{% endblock %}
+{% block script %}
+<script src="/static/guest.js" defer
+        data-send="{{ visit.path }}/send" data-poll="{{ visit.path }}/poll"></script>
+{% endblock %}

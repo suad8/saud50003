@@ -1,0 +1,48 @@
+{% extends "guest_base.html" %}
+{% block title %}غرفة {{ room }} · {{ hotel.name }}{% endblock %}
+{% block subtitle %}غرفة {{ room }}{% endblock %}
+{% block style %}
+  .langs{display:grid; grid-template-columns:repeat(auto-fill,minmax(102px,1fr)); gap:8px; margin:4px 0 20px}
+  .lang{padding:12px 8px; text-align:center; border-radius:12px; border:1px solid var(--line);
+    background:var(--card); cursor:pointer; font:inherit; font-size:.92rem; font-weight:600; min-height:48px}
+  .lang[aria-pressed="true"]{background:var(--brand); border-color:var(--brand); color:#fff}
+  .field{margin-bottom:16px}
+  .go{width:100%; margin-top:4px}
+  .code-in{text-align:center; letter-spacing:.32em; font-size:1.3rem; font-weight:700; text-transform:uppercase}
+{% endblock %}
+{% block body %}
+<main class="card">
+  <h2 style="margin:0 0 4px; font-size:1.1rem">أهلًا بك</h2>
+  <p class="muted" style="margin:0 0 16px">اختر لغتك، ونجاوبك على طول.</p>
+
+  {% if error %}<div class="err" role="alert">{{ error }}</div>{% endif %}
+
+  <form method="post" action="{{ visit.path }}/enter" id="f">
+    <input type="hidden" name="language" id="lang" value="{{ language|default('ar') }}">
+    <div class="langs" role="group" aria-label="اللغة">
+      {% for code, name in languages %}
+      <button type="button" class="lang" data-lang="{{ code }}"
+              aria-pressed="{{ 'true' if code == (language|default('ar')) else 'false' }}"
+              lang="{{ code }}">{{ name }}</button>
+      {% endfor %}
+    </div>
+
+    {% if needs_input %}
+    <div class="field">
+      <label for="proof">{{ prompt }}</label>
+      <input id="proof" name="proof" required autocomplete="one-time-code"
+             {% if mode == 'phone_last4' %}inputmode="numeric" pattern="[0-9]*" maxlength="10"
+             {% else %}class="code-in" maxlength="8" autocapitalize="characters"{% endif %}>
+      <p class="muted" style="margin:9px 0 0">نسألك مرة وحدة بس. بعدها يفتح على طول.</p>
+    </div>
+    {% else %}
+    <p class="muted" style="margin:0 0 16px">{{ prompt }}</p>
+    {% endif %}
+
+    <button class="btn p go" type="submit">ابدأ</button>
+  </form>
+</main>
+{% endblock %}
+{% block script %}
+<script src="/static/guest.js" defer></script>
+{% endblock %}

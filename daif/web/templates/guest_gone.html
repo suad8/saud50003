@@ -1,0 +1,10 @@
+{% extends "guest_base.html" %}
+{% block title %}انتهت الجلسة{% endblock %}
+{% block body %}
+<main class="card" style="text-align:center">
+  <div style="font-size:2.2rem; line-height:1; margin-bottom:12px" aria-hidden="true">🔒</div>
+  <h2 style="margin:0 0 8px; font-size:1.08rem">ما نقدر نفتح المحادثة</h2>
+  <p class="muted" style="margin:0 0 18px">{{ reason }}</p>
+  {% if retry %}<a class="btn p" href="{{ retry }}" style="display:inline-block; text-decoration:none">جرّب مرة ثانية</a>{% endif %}
+</main>
+{% endblock %}

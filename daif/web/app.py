@@ -41,7 +41,7 @@ from ..reports import (
     tickets_csv,
 )
 from ..ratelimit import LOGIN, WEBHOOK, limiter
-from ..models import Fact, Guest, HandoffRecord, StaffUser, Tenant, Ticket
+from ..models import Fact, Guest, HandoffRecord, Message, StaffUser, Tenant, Ticket
 from ..repository import (
     audit,
     count_active_owners,
@@ -128,10 +128,12 @@ TICKET_TYPE_LABELS = {
 
 
 from .api import router as _api_router  # noqa: E402
+from .guest import setup as _guest_setup  # noqa: E402
 from .platform import setup as _platform_setup  # noqa: E402
 
 app.include_router(_platform_setup(templates))
 app.include_router(_api_router)
+app.include_router(_guest_setup(templates))
 
 
 @app.on_event("startup")
@@ -641,6 +643,50 @@ def conversations_page(
         request, session, principal, "conversations.html", "conversations",
         guests=guests, selected=selected, messages=messages,
     )
+
+
+@app.post("/conversations/{guest_id}/reply")
+def conversation_reply(
+    request: Request,
+    guest_id: int,
+    text: str = Form(""),
+    session: Session = Depends(get_session),
+    principal: Principal | None = Depends(current_principal),
+) -> Response:
+    """ردّ بشري يصل النزيل في نفس محادثته.
+
+    لا يمرّ على المساعد ولا على قاعدة المعرفة: الموظف يعرف ما لا يعرفه النظام،
+    وهذا بالضبط سبب وجود التحويل. ويُوسم باسمه فيراه النزيل ويُحتسب خارج نسبة
+    الأتمتة، وإلا بدت اللوحة كأن المساعد يجيب عن كل شيء.
+    """
+    if principal is None:
+        return _login_redirect()
+    _require(principal, authz.VIEW_CONVERSATIONS)
+    from sqlalchemy import select
+
+    record = session.get(Guest, guest_id)
+    if record is None or record.tenant_id != principal.tenant.id:
+        raise HTTPException(status_code=404, detail="نزيل غير معروف")
+
+    body = (text or "").strip()[:1000]
+    if not body:
+        return RedirectResponse(f"/conversations?guest={guest_id}", status_code=303)
+
+    session.add(Message(
+        tenant_id=principal.tenant.id, guest_id=guest_id, direction="out",
+        text=body, sent_by=principal.user.name or principal.user.email,
+    ))
+    # ردّ الموظف يُنهي ما عجز عنه المساعد، فتُقفل تحويلات هذا النزيل المفتوحة.
+    for row in session.scalars(
+        select(HandoffRecord).where(
+            HandoffRecord.tenant_id == principal.tenant.id,
+            HandoffRecord.guest_id == guest_id,
+            HandoffRecord.status == "open",
+        )
+    ).all():
+        row.status = "closed"
+    session.commit()
+    return RedirectResponse(f"/conversations?guest={guest_id}", status_code=303)
 
 
 @app.get("/gaps", response_class=HTMLResponse)

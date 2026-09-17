@@ -54,6 +54,9 @@ class Tenant(Base):
     # التبديل اليدوي يُنسى في ليلة الثلاثين من شعبان. التواريخ يدخلها المدير
     # مرة واحدة، والنظام يبدّل من تلقاء نفسه.
     season_auto: Mapped[bool] = mapped_column(Boolean, default=False)
+    # كيف يثبت النزيل أنه في الغرفة أول مرة: stay_code | phone_last4 | desk_arm.
+    # المبدئي هو الكود المطبوع — يموت مع الإقامة ولا يسأل النزيل شيئًا يحفظه.
+    access_mode: Mapped[str] = mapped_column(String(16), default="stay_code")
     ramadan_start: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     ramadan_end: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     hajj_start: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
@@ -203,6 +206,10 @@ class Message(Base):
     direction: Mapped[str] = mapped_column(String(8))  # in | out
     text: Mapped[str] = mapped_column(Text, default="")
     wa_message_id: Mapped[str] = mapped_column(String(128), default="", index=True)
+
+    # اسم الموظف حين يكون الرد بشريًا. الفراغ يعني أن المساعد هو من ردّ —
+    # وهو الفرق الذي تُحسب منه نسبة الأتمتة، ويراه النزيل في المحادثة.
+    sent_by: Mapped[str] = mapped_column(String(120), default="")
 
     # --- ناتج المعالجة (للرسائل الصادرة) ---
     language: Mapped[str] = mapped_column(String(8), default="")
