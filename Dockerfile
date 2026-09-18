@@ -8,13 +8,13 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# الاعتماديات أولًا: طبقة تُخزَّن مؤقتًا ولا تُعاد بناؤها مع كل تغيير في الكود
+# الاعتماديات أولًا: طبقة تُخزَّن مؤقتًا ولا تُعاد بناؤها مع كل تغيير في الكود.
+# تُقرأ من pyproject لا من قائمة مكتوبة هنا: القائمتان المنفصلتان انحرفتا
+# فعلًا، ونُشرت صورة بلا segno.
 COPY pyproject.toml README.md ./
-RUN pip install --no-cache-dir \
-      "anthropic>=1.2.0" "pydantic>=2.9" "fastapi>=0.115" "uvicorn[standard]>=0.30" \
-      "httpx>=0.27" "sqlalchemy>=2.0" "jinja2>=3.1" "pyyaml>=6.0" \
-      "python-multipart>=0.0.9" "itsdangerous>=2.2" "cryptography>=42" \
-      "alembic>=1.13" "psycopg[binary]>=3.1"
+RUN mkdir -p daif && touch daif/__init__.py \
+    && pip install --no-cache-dir . \
+    && rm -rf daif
 
 COPY daif ./daif
 COPY prompts ./prompts

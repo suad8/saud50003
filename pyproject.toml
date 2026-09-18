@@ -3,6 +3,8 @@ name = "daif"
 version = "0.1.0"
 description = "ضيف — مساعد النزلاء الذكي لفنادق الحرمين، منصة SaaS متعددة الفنادق"
 requires-python = ">=3.11"
+# مصدر واحد للاعتماديات. كانت موزّعة على ثلاثة ملفات لا تتفق، فنُشرت صورة
+# بلا segno وسقطت صفحة الملصقات في الإنتاج وحدها. الآن الصورة تبني من هنا.
 dependencies = [
     "anthropic>=1.2.0",
     "pydantic>=2.9",
@@ -14,6 +16,10 @@ dependencies = [
     "pyyaml>=6.0",
     "python-multipart>=0.0.9",
     "itsdangerous>=2.2",
+    "cryptography>=42",          # تشفير أسرار الفنادق المخزَّنة
+    "alembic>=1.13",             # ترحيلات قاعدة البيانات
+    "psycopg[binary]>=3.1",      # Postgres في الإنتاج
+    "segno>=1.6",                # رموز QR لملصقات الغرف
 ]
 
 [project.optional-dependencies]

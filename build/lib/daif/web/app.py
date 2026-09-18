@@ -41,7 +41,7 @@ from ..reports import (
     tickets_csv,
 )
 from ..ratelimit import LOGIN, WEBHOOK, limiter
-from .. import preflight, roomqr, stay as stay_mod
+from .. import roomqr, stay as stay_mod
 from ..models import (
     AuditLog, Fact, Guest, HandoffRecord, Message, StaffUser, Tenant, Ticket,
 )
@@ -144,15 +144,6 @@ app.include_router(_guest_setup(templates))
 
 @app.on_event("startup")
 def _startup() -> None:
-    problems = preflight.check()
-    if problems:
-        logger.warning("فحص ما قبل الإقلاع:\n%s", preflight.summary(problems))
-    fatal = [p for p in problems if p.fatal]
-    if fatal:
-        raise preflight.ConfigurationError(
-            "الإقلاع متوقّف — إعداد الإنتاج ناقص:\n"
-            + preflight.summary(fatal)
-        )
     init_db()
     _bootstrap_admin()
 
