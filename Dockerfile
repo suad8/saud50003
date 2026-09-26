@@ -11,10 +11,14 @@ WORKDIR /app
 # الاعتماديات أولًا: طبقة تُخزَّن مؤقتًا ولا تُعاد بناؤها مع كل تغيير في الكود.
 # تُقرأ من pyproject لا من قائمة مكتوبة هنا: القائمتان المنفصلتان انحرفتا
 # فعلًا، ونُشرت صورة بلا segno.
+#
+# ونثبّت الاعتماديات وحدها لا الحزمة: تثبيت الحزمة هنا يحتاج مصدرًا وهميًا
+# قبل نسخ الكود، فينتهي في site-packages `daif` فارغ قد يحجب الحقيقي حسب
+# ترتيب مسار الاستيراد. قراءة القائمة ثم تثبيتها تتفادى الالتباس كله.
 COPY pyproject.toml README.md ./
-RUN mkdir -p daif && touch daif/__init__.py \
-    && pip install --no-cache-dir . \
-    && rm -rf daif
+RUN python -c "import tomllib; print('\n'.join(tomllib.load(open('pyproject.toml','rb'))['project']['dependencies']))" > /tmp/req.txt \
+    && pip install --no-cache-dir -r /tmp/req.txt \
+    && rm /tmp/req.txt
 
 COPY daif ./daif
 COPY prompts ./prompts

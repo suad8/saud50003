@@ -75,7 +75,8 @@ def test_every_runtime_import_is_a_declared_dependency():
 def test_dockerfile_builds_from_pyproject_not_a_second_list():
     """قائمة اعتماديات ثانية في الصورة = انحراف مؤجَّل."""
     docker = (ROOT / "Dockerfile").read_text("utf-8")
-    assert "pip install --no-cache-dir ." in docker
+    assert "pyproject.toml" in docker and "dependencies" in docker, \
+        "الصورة لا تقرأ الاعتماديات من pyproject"
     assert "anthropic>=" not in docker, "الصورة تعيد سرد الاعتماديات بدل قراءتها"
 
 
