@@ -2,32 +2,34 @@
    يعتمد الخصائص المنطقية (inline-start/end) فلا يحتاج ورقة منفصلة لكل اتجاه. */
 
 :root {
-  --bg: #f6f8f7;
+  /* الحياد مائل إلى الأزرق قليلًا: الرمادي المحايد تمامًا يبدو غير مقصود. */
+  --bg: #f4f7fc;
   --surface: #ffffff;
-  --surface-2: #fbfcfc;
-  --text: #0f2320;
-  --text-muted: #5d6d68;
-  --border: #e3e8e6;
-  --border-strong: #d2dad7;
+  --surface-2: #f9fbfe;
+  --text: #0a1a2f;
+  --text-muted: #5a6b85;
+  --border: #dde5f2;
+  --border-strong: #c7d3e6;
 
-  --accent: #0e7a63;
-  --accent-hover: #0b6250;
-  --accent-soft: #e6f2ef;
+  --accent: #1257e0;
+  --accent-hover: #0e46b8;
+  --accent-soft: #e8f0ff;
   --accent-text: #ffffff;
 
-  --amber: #b45309;
-  --amber-soft: #fdf3e3;
-  --red: #b3261e;
-  --red-soft: #fdecea;
-  --green: #1a7f45;
-  --green-soft: #e7f5ec;
-  --blue: #1f5fa8;
-  --blue-soft: #e8f0fa;
+  /* ألوان الحالة مستقلة عن لون الهوية: لا تُقرأ كلمسة جمالية بل كإشارة. */
+  --amber: #a55a00;
+  --amber-soft: #fff4e2;
+  --red: #c02626;
+  --red-soft: #fdeceb;
+  --green: #0f7a4a;
+  --green-soft: #e6f5ee;
+  --blue: #1257e0;
+  --blue-soft: #e8f0ff;
 
   --radius: 14px;
   --radius-sm: 9px;
-  --shadow: 0 1px 2px rgba(16, 35, 32, .05), 0 8px 24px -12px rgba(16, 35, 32, .16);
-  --shadow-sm: 0 1px 2px rgba(16, 35, 32, .06);
+  --shadow: 0 1px 2px rgba(10, 26, 47, .05), 0 8px 24px -12px rgba(10, 26, 47, .14);
+  --shadow-sm: 0 1px 2px rgba(10, 26, 47, .06);
   --sidebar-w: 246px;
 
   --font-latin: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -38,27 +40,27 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0b100f;
-    --surface: #121a18;
-    --surface-2: #161f1d;
-    --text: #e9efec;
-    --text-muted: #94a39e;
-    --border: #202b28;
-    --border-strong: #2b3835;
+    --bg: #070d17;
+    --surface: #0f1725;
+    --surface-2: #131c2d;
+    --text: #e8eefb;
+    --text-muted: #94a3bd;
+    --border: #1e2a3f;
+    --border-strong: #2a3850;
 
-    --accent: #2fc9a4;
-    --accent-hover: #46d9b6;
-    --accent-soft: #0f2f28;
-    --accent-text: #052019;
+    --accent: #5b9bff;
+    --accent-hover: #7db1ff;
+    --accent-soft: #10243f;
+    --accent-text: #061223;
 
-    --amber: #e2a33c;
-    --amber-soft: #2c2211;
-    --red: #f2867c;
-    --red-soft: #2e1614;
-    --green: #4fc47e;
-    --green-soft: #10281a;
-    --blue: #74aaf0;
-    --blue-soft: #131f30;
+    --amber: #e0a244;
+    --amber-soft: #2a2011;
+    --red: #f28b85;
+    --red-soft: #2e1616;
+    --green: #4dc98d;
+    --green-soft: #0e2a1e;
+    --blue: #5b9bff;
+    --blue-soft: #10243f;
 
     --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 10px 30px -14px rgba(0, 0, 0, .7);
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, .35);

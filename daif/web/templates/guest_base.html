@@ -3,29 +3,29 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0f3d2e">
+<meta name="theme-color" content="#0a1a2f">
 <title>{% block title %}{{ hotel.name if hotel else 'ضيف' }}{% endblock %}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root{
-    --brand:#0f3d2e; --brand-2:#14543f; --accent:#1c7a5a;
-    --bg:#f2f5f3; --card:#fff; --ink:#132019; --ink-2:#5b6b63; --line:#e0e7e3;
-    --bubble-in:#fff; --bubble-out:#d8f0e4; --gold:#8f6318; --gold-soft:#faf1dc;
-    --danger:#a8321f; --radius:16px;
+    --brand:#0a1a2f; --brand-2:#123256; --accent:#1257e0;
+    --bg:#f4f7fc; --card:#fff; --ink:#0a1a2f; --ink-2:#5a6b85; --line:#dde5f2;
+    --bubble-in:#fff; --bubble-out:#dfeaff; --gold:#a55a00; --gold-soft:#fff4e2;
+    --danger:#c02626; --radius:16px;
   }
   :root:not([data-theme="light"]){ @media (prefers-color-scheme: dark){
-    --bg:#0e1512; --card:#16201b; --ink:#e8efea; --ink-2:#9db0a6; --line:#26332c;
-    --bubble-in:#1d2a23; --bubble-out:#1f4a39; --gold:#d9a94e; --gold-soft:#2b2312;
+    --bg:#070d17; --card:#0f1725; --ink:#e8eefb; --ink-2:#94a3bd; --line:#1e2a3f;
+    --bubble-in:#162032; --bubble-out:#153a6e; --gold:#e0a244; --gold-soft:#2a2011;
   }}
   @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
-    --bg:#0e1512; --card:#16201b; --ink:#e8efea; --ink-2:#9db0a6; --line:#26332c;
-    --bubble-in:#1d2a23; --bubble-out:#1f4a39; --gold:#d9a94e; --gold-soft:#2b2312;
+    --bg:#070d17; --card:#0f1725; --ink:#e8eefb; --ink-2:#94a3bd; --line:#1e2a3f;
+    --bubble-in:#162032; --bubble-out:#153a6e; --gold:#e0a244; --gold-soft:#2a2011;
   }}
   :root[data-theme="dark"]{
-    --bg:#0e1512; --card:#16201b; --ink:#e8efea; --ink-2:#9db0a6; --line:#26332c;
-    --bubble-in:#1d2a23; --bubble-out:#1f4a39; --gold:#d9a94e; --gold-soft:#2b2312;
+    --bg:#070d17; --card:#0f1725; --ink:#e8eefb; --ink-2:#94a3bd; --line:#1e2a3f;
+    --bubble-in:#162032; --bubble-out:#153a6e; --gold:#e0a244; --gold-soft:#2a2011;
   }
   *{box-sizing:border-box}
   html,body{margin:0; padding:0}

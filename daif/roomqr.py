@@ -95,7 +95,7 @@ def qr_svg(url: str, scale: int = 4) -> str:
     buf = _io.BytesIO()
     segno.make(url, error="m", micro=False).save(
         buf, kind="svg", scale=scale, border=4,
-        dark="#0f3d2e", light="#ffffff", xmldecl=False, svgclass=None, lineclass=None,
+        dark="#0a1a2f", light="#ffffff", xmldecl=False, svgclass=None, lineclass=None,
     )
     return buf.getvalue().decode("utf-8")
 
