@@ -18,18 +18,17 @@ _DEV_SECRET: str | None = None
 def signing_secret() -> str:
     """سرّ توقيع الجلسات.
 
-    بلا `DAIF_DASHBOARD_SECRET` نولّد مفتاحًا واحدًا لعمر العملية — لا مفتاحًا
-    لكل نداء. المفتاح المتغيّر في كل نداء يعني أن التوقيع لا يُقرأ أبدًا، فلا
-    يستطيع أحد الدخول أصلًا. الجلسات تنتهي عند إعادة التشغيل، وهذا مقبول في
-    التطوير وحده.
+    الترتيب: متغيّر البيئة أولًا وهو الأقوى، ثم سرّ مولَّد محفوظ في قاعدة
+    البيانات. الثاني يعمل بلا إعداد ويصمد أمام إعادة التشغيل — وهو ما يهمّ
+    الموظف الذي كان يجد نفسه خارج اللوحة بعد كل نشر.
     """
-    global _DEV_SECRET
     secret = get_settings().dashboard_secret
     if secret:
         return secret
-    if _DEV_SECRET is None:
-        _DEV_SECRET = secrets.token_urlsafe(32)
-    return _DEV_SECRET
+    # مولَّد محفوظ في قاعدة البيانات: يبقى عبر إعادة التشغيل، بخلاف المولَّد
+    # لعمر العملية الذي كان يسقط جلسات كل الموظفين بلا سبب ظاهر.
+    from ..secrets_store import get as stored
+    return stored("dashboard")
 
 
 def _serializer() -> URLSafeSerializer:

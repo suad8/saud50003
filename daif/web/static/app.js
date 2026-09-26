@@ -12,3 +12,14 @@ document.addEventListener("change", (event) => {
   rooms.disabled = !isLeader;
   if (!isLeader) rooms.value = "";
 });
+
+// شريط المنصة التجريبية: زر يملأ الحقول بدل نسخ البيانات يدويًا.
+document.addEventListener("click", function (e) {
+  var b = e.target.closest(".demo-fill");
+  if (!b) return;
+  var email = document.getElementById("email");
+  var pw = document.getElementById("password");
+  if (email) email.value = b.dataset.email || "";
+  if (pw) pw.value = b.dataset.pw || "";
+  if (pw) pw.focus();
+});

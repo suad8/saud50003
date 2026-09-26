@@ -108,8 +108,13 @@ def test_dev_run_is_not_blocked(monkeypatch):
     assert problems and not any(p.fatal for p in problems)
 
 
-def test_production_without_secrets_refuses_to_boot(monkeypatch):
-    """خادم لا يقوم يُرى في دقيقة؛ خادم بنصف إعداد يُكتشف بعد أسبوع."""
+def test_production_without_a_real_database_refuses_to_boot(monkeypatch):
+    """خادم لا يقوم يُرى في دقيقة؛ خادم بنصف إعداد يُكتشف بعد أسبوع.
+
+    الأسرار لم تعد ضمن ما يمنع الإقلاع: صارت المنصة تولّدها وتحفظها، فتعمل
+    بلا إعداد وتصمد أمام إعادة التشغيل. أمّا قاعدة البيانات فلا بديل عنها —
+    قرص منصات النشر مؤقت، والإنتاج على SQLite يفقد كل شيء مع كل نشر.
+    """
     from daif import preflight
 
     monkeypatch.setenv("DAIF_ENV", "production")
@@ -117,8 +122,7 @@ def test_production_without_secrets_refuses_to_boot(monkeypatch):
                 "DAIF_DATABASE_URL", "DATABASE_URL"):
         monkeypatch.delenv(key, raising=False)
     fatal = [p.key for p in preflight.check() if p.fatal]
-    assert "DAIF_SECRET_KEY" in fatal
-    assert "DAIF_DASHBOARD_SECRET" in fatal
+    assert fatal == ["DATABASE_URL"], f"يمنع الإقلاع لأسباب غير متوقّعة: {fatal}"
 
 
 def test_production_on_sqlite_is_fatal(monkeypatch):

@@ -456,3 +456,26 @@ class StayDevice(Base):
     revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     stay: Mapped["Stay"] = relationship(back_populates="devices")
+
+
+class PlatformSecret(Base):
+    """سرّ تولّده المنصة لنفسها ويبقى عبر إعادات التشغيل.
+
+    الأصل أن تأتي الأسرار من متغيّرات البيئة، وهو الأقوى: تسريب قاعدة
+    البيانات لا يكشفها. لكن اشتراط ضبطها يدويًا قبل أول تشغيل كان يوقف
+    النشر عند من يريد أن يرى النظام يعمل أولًا — أو أسوأ، يدفعه إلى قيمة
+    ثابتة مكتوبة في الكود.
+
+    فالمولَّد المحفوظ هنا حلّ وسط مقصود: يعمل بلا إعداد، ويبقى ثابتًا عبر
+    إعادة التشغيل (وهو ما يفشل فيه المولَّد لعمر العملية)، ومتغيّر البيئة
+    حين يوجد يسبقه دائمًا ولا يُكتب هنا أبدًا.
+
+    ما لا يُخزَّن هنا: مفتاح تشفير أسرار الفنادق. حفظه في نفس قاعدة البيانات
+    التي يحميها يُبطل الحماية من أساسها.
+    """
+
+    __tablename__ = "platform_secrets"
+
+    name: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

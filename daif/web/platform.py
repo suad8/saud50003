@@ -86,9 +86,12 @@ def setup(templates) -> APIRouter:
         return response
 
     @router.get("/login", response_class=HTMLResponse)
-    def login_form(request: Request) -> Response:
+    def login_form(request: Request,
+                   session: Session = Depends(get_session)) -> Response:
         t = get_translator(request.query_params.get("lang") or "ar")
-        return render(request, "platform_login.html", {"t": t, "error": False})
+        from .app import _demo_ctx
+        return render(request, "platform_login.html",
+                      {"t": t, "error": False, **_demo_ctx(session, "platform")})
 
     @router.post("/login")
     def login_submit(

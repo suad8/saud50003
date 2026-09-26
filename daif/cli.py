@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 import yaml
+from sqlalchemy import select
 
 from .clock import parse_date
 from .config import server_port
@@ -16,7 +17,9 @@ from .billing import format_sar  # noqa: F401
 from .knowledge import KnowledgeBase
 from .models import Fact, StaffUser, Tenant
 from .repository import staff_by_email, tenant_by_slug
-from .security import hash_password
+from .security import hash_password, verify_password
+
+ROOT = Path(__file__).resolve().parent.parent
 
 
 def cmd_init(args: argparse.Namespace) -> int:
@@ -162,6 +165,147 @@ def cmd_serve(args: argparse.Namespace) -> int:
     return 0
 
 
+# كلمات مرور العرض. ظاهرة عمدًا في الكود وفي الشاشة: هي مؤقتة ومعروفة
+# ومعلَنة، لا سرّ يُظنّ أنه محفوظ. والأمر يرفض العمل على قاعدة فيها بيانات،
+# فلا يمكن أن يفتح بابًا في منصة قائمة.
+DEMO_PW = "Daif-Demo-2026"
+
+
+def cmd_demo(args: argparse.Namespace) -> int:
+    """يجهّز منصة كاملة جاهزة للعرض بأمر واحد.
+
+    المشكلة التي يحلّها: بعد أول نشر لا يوجد شيء — لا مشغّل، ولا فندق، ولا
+    غرفة، ولا حقيقة واحدة. فمن يريد أن يرى النظام يعمل يمرّ بست شاشات قبل
+    أول جواب. هذا الأمر يقفز بها كلها.
+
+    وهو مرفوض على قاعدة بيانات فيها بيانات: العرض يُجهَّز مرة على منصة
+    فارغة، ولا يُقحَم على فندق يعمل.
+    """
+    from datetime import timedelta
+
+    from . import stay as stay_mod
+    from .clock import now_riyadh
+    from .models import Fact, PlatformAdmin, StaffUser, Tenant, Ticket
+    from .security import hash_password
+
+    init_db()
+    with session_scope() as session:
+        if session.scalar(select(Tenant).limit(1)) is not None:
+            print("‼ توجد فنادق في قاعدة البيانات. أمر العرض للمنصة الفارغة وحدها.")
+            print("  أنشئ فندقًا من /platform، أو استعمل create-hotel.")
+            return 1
+
+        admin_email = args.email
+        if session.scalar(select(PlatformAdmin).limit(1)) is None:
+            session.add(PlatformAdmin(email=admin_email, name="مشغّل المنصة",
+                                      password_hash=hash_password(DEMO_PW)))
+
+        hotel = Tenant(slug=args.slug, name=args.hotel, plan="pro",
+                       city="المدينة المنورة", access_mode="stay_code")
+        session.add(hotel)
+        session.flush()
+
+        staff_email = f"reem@{args.slug}.sa"
+        session.add(StaffUser(tenant_id=hotel.id, email=staff_email,
+                              name="ريم · الاستقبال", role="owner",
+                              password_hash=hash_password(DEMO_PW)))
+
+        # قاعدة المعرفة مفعّلة هنا خلافًا للفندق الحقيقي: العرض بلا حقائق
+        # ظاهرة يحوّل كل سؤال، فلا يُرى منه شيء.
+        records = yaml.safe_load((ROOT / "data" / "knowledge_base.yaml").read_text("utf-8"))
+        for rec in records:
+            session.add(Fact(
+                tenant_id=hotel.id, key=rec["id"], text=rec["text"],
+                topic=rec.get("topic", ""), active=True,
+                seasons=",".join(rec.get("seasons", ["normal", "ramadan", "hajj"])),
+                hours=rec.get("hours", "") or "",
+                paid=bool(rec.get("paid", False)),
+            ))
+
+        today = now_riyadh().date()
+        codes = []
+        for room, name, phone in [("402", "أحمد الغامدي", "966500000001"),
+                                  ("318", "محمد أسلم", "923000000002"),
+                                  ("215", "Siti Rahayu", "628100000003")]:
+            st = stay_mod.open_stay(session, hotel.id, room, guest_name=name,
+                                    phone=phone, checkout_on=today + timedelta(days=3))
+            codes.append((room, st.stay_code))
+
+        from . import demo as demo_mod
+        demo_mod.enable(session, platform_email=admin_email, staff_email=staff_email,
+                        password=DEMO_PW, hotel=args.hotel)
+
+        now = now_riyadh()
+        for ty, room, detail, urg, status in [
+            ("صيانة", "318", "المكيف ما يبرّد — مكرّرة من أمس", "urgent", "open"),
+            ("تدبير فندقي", "512", "مناشف إضافية ووسادة", "normal", "open"),
+            ("تدبير فندقي", "407", "تنظيف الغرفة الساعة ٤ العصر", "normal", "in_progress"),
+            ("صيانة", "233", "الدش ماؤه بارد", "normal", "done"),
+        ]:
+            session.add(Ticket(tenant_id=hotel.id, type=ty, room=room, detail=detail,
+                               urgency=urg, status=status, created_at=now))
+
+    base = args.url.rstrip("/") if args.url else "https://<نطاقك>"
+    line = "─" * 54
+    print()
+    print(line)
+    print("  جاهز. بيانات الدخول — مؤقتة ومعروفة، غيّرها قبل الاستعمال الحقيقي")
+    print(line)
+    print(f"  لوحة المنصة   {base}/platform/login")
+    print(f"     البريد      {admin_email}")
+    print(f"     كلمة المرور {DEMO_PW}")
+    print()
+    print(f"  لوحة الفندق   {base}/login")
+    print(f"     البريد      {staff_email}")
+    print(f"     كلمة المرور {DEMO_PW}")
+    print(line)
+    print("  إقامات مفتوحة، ورموزها للنزيل:")
+    for room, code in codes:
+        print(f"     غرفة {room}   الرمز {code}")
+    print(line)
+    print(f"  اطبع الملصقات  {base}/stays/stickers?rooms=401-410")
+    print()
+    print("  البيانات هذي تظهر أيضًا فوق نموذج الدخول، فالزائر يجرّب بلا ما يسألك.")
+    print()
+    print("  ⚠ قبل أول استعمال حقيقي:  python -m daif.cli demo-off")
+    print("    يطفئ الشريط ويطلب منك كلمة مرور جديدة.")
+    print()
+    return 0
+
+
+def cmd_demo_off(args: argparse.Namespace) -> int:
+    """يطفئ وضع العرض ويجبر على تغيير كلمات المرور المعلَنة.
+
+    الإطفاء وحده لا يكفي: كلمة المرور بقيت هي هي، ومعروفة، ومنشورة في هذا
+    الملف. فمن يطفئ الشريط ويظن نفسه أغلق الباب يكون أسوأ حالًا ممن تركه
+    ظاهرًا — يظن أنه محمي وليس كذلك.
+    """
+    from . import demo as demo_mod
+    from .models import PlatformAdmin, StaffUser
+    from .security import hash_password
+
+    new_pw = args.password or getpass.getpass("كلمة مرور جديدة (١٢ محرفًا فأكثر): ")
+    if len(new_pw) < 12:
+        print("‼ كلمة المرور أقصر من ١٢ محرفًا.")
+        return 1
+
+    init_db()
+    with session_scope() as session:
+        was_on = demo_mod.disable(session)
+        changed = 0
+        for model in (PlatformAdmin, StaffUser):
+            for row in session.scalars(select(model)).all():
+                if verify_password(DEMO_PW, row.password_hash):
+                    row.password_hash = hash_password(new_pw)
+                    changed += 1
+
+    print(f"أُطفئ الشريط." if was_on else "الشريط كان مطفأً أصلًا.")
+    print(f"غُيّرت كلمة مرور {changed} حسابًا كانت على كلمة العرض.")
+    if not changed:
+        print("لا حساب على كلمة العرض — غيّرتها من قبل على ما يبدو.")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="daif", description="ضيف — أدوات التشغيل")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -199,6 +343,17 @@ def build_parser() -> argparse.ArgumentParser:
     kb.add_argument("hotel")
     kb.add_argument("file")
     kb.set_defaults(func=cmd_import_kb)
+
+    demo = sub.add_parser("demo", help="تجهيز منصة عرض كاملة ببيانات دخول معلنة")
+    demo.add_argument("--hotel", default="فندق طيبة")
+    demo.add_argument("--slug", default="taibah")
+    demo.add_argument("--email", default="admin@daif.sa")
+    demo.add_argument("--url", default="", help="نطاق النشر لطباعة روابط جاهزة")
+    demo.set_defaults(func=cmd_demo)
+
+    off = sub.add_parser("demo-off", help="إطفاء وضع العرض وتغيير كلمات المرور المعلَنة")
+    off.add_argument("--password", default="", help="كلمة المرور الجديدة (وإلا تُطلب تفاعليًا)")
+    off.set_defaults(func=cmd_demo_off)
 
     serve = sub.add_parser("serve", help="تشغيل الخادم")
     serve.add_argument("--host", default="127.0.0.1")

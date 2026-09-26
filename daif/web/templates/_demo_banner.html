@@ -1,0 +1,14 @@
+{% if demo %}
+<div class="demo-banner" role="note">
+  <div class="demo-head">
+    <span class="demo-tag">منصة تجريبية</span>
+    <span>بياناتها معلَنة، وما يُكتب فيها يراه غيرك. لا تدخل معلومات حقيقية.</span>
+  </div>
+  <dl class="demo-creds">
+    <div><dt>البريد</dt><dd dir="ltr">{{ demo_email }}</dd></div>
+    <div><dt>كلمة المرور</dt><dd dir="ltr">{{ demo.password }}</dd></div>
+  </dl>
+  <button class="btn sm demo-fill" type="button"
+          data-email="{{ demo_email }}" data-pw="{{ demo.password }}">عبّها لي</button>
+</div>
+{% endif %}

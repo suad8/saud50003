@@ -9,6 +9,8 @@
         <h1>لوحة المنصة</h1>
         <span class="sub">تشغيل المشتركين والفوترة</span>
       </div>
+      {% include "_demo_banner.html" %}
+
       {% if error %}<div class="alert error">بيانات الدخول غير صحيحة</div>{% endif %}
       <form method="post" action="/platform/login" class="stack">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

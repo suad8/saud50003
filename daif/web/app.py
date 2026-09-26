@@ -257,6 +257,17 @@ def _require(principal: Principal, permission: str) -> None:
         raise HTTPException(status_code=403, detail="لا تملك صلاحية هذا الإجراء")
 
 
+def _demo_ctx(session, which: str) -> dict:
+    """سياق شريط المنصة التجريبية، أو فارغ حين يكون الوضع مطفأً."""
+    from .. import demo as demo_mod
+
+    info = demo_mod.banner(session)
+    if not info:
+        return {"demo": None}
+    return {"demo": info,
+            "demo_email": info.get("platform_email" if which == "platform" else "staff_email", "")}
+
+
 def _template(request: Request, name: str, context: dict, status_code: int = 200):
     """يبني الرد ويثبّت رمز حماية النماذج."""
     token = csrf.token_for(request)
@@ -301,9 +312,12 @@ def _render(
 # ---------------------------------------------------------------------------
 
 @app.get("/login", response_class=HTMLResponse)
-def login_form(request: Request) -> HTMLResponse:
+def login_form(request: Request,
+               session: Session = Depends(get_session)) -> HTMLResponse:
     t = get_translator(_locale_for(request, None))
-    return _template(request, "login.html", {"t": t, "locales": LOCALES, "error": False})
+    return _template(request, "login.html",
+                     {"t": t, "locales": LOCALES, "error": False,
+                      **_demo_ctx(session, "hotel")})
 
 
 @app.post("/login")

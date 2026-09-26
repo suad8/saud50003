@@ -39,11 +39,20 @@ def check(*, production: bool | None = None) -> list[Problem]:
         if not os.environ.get(key, "").strip():
             found.append(Problem(key, detail, fatal=production))
 
-    need("DAIF_SECRET_KEY",
-         "يشفّر أسرار الفنادق ويوقّع أكواد الغرف. بلا ثابت منه تصير كل "
-         "الملصقات المطبوعة غير صالحة عند إعادة التشغيل.")
-    need("DAIF_DASHBOARD_SECRET",
-         "يوقّع جلسات اللوحة. بلا ثابت منه يخرج كل الموظفين عند كل إعادة تشغيل.")
+    # هذان لم يعودا يمنعان الإقلاع: المنصة تولّدهما وتحفظهما إن غابا، فتعمل
+    # بلا إعداد. لكن ضبطهما أقوى — تسريب قاعدة البيانات لا يكشفهما — ويظل
+    # تنبيهًا قائمًا حتى يُضبطا.
+    if not os.environ.get("DAIF_SECRET_KEY", "").strip():
+        found.append(Problem(
+            "DAIF_SECRET_KEY",
+            "غير مضبوط — تُولَّد أسرار المنصة وتُحفظ في قاعدة البيانات. يعمل، "
+            "لكن ضبطه يبقيها خارجها. ولاحقًا: أسرار الفنادق المخزَّنة تحتاجه.",
+            fatal=False))
+    if not os.environ.get("DAIF_DASHBOARD_SECRET", "").strip():
+        found.append(Problem(
+            "DAIF_DASHBOARD_SECRET",
+            "غير مضبوط — يُولَّد ويُحفظ. الجلسات تصمد أمام إعادة التشغيل.",
+            fatal=False))
 
     if not os.environ.get("ANTHROPIC_API_KEY", "").strip():
         # ليس قاتلًا: المساعد يتحوّل للموظف بدله، وهو سلوك مقصود لا عطل.

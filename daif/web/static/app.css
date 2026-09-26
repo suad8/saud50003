@@ -416,3 +416,25 @@ details.inline-form[open] > summary { margin-bottom: 14px; }
   padding-top: 30px; margin-top: 34px; border-top: 1px solid var(--border);
   font-size: .82rem; color: var(--text-muted);
 }
+
+/* --- شريط المنصة التجريبية --- */
+/* ظاهر عمدًا فوق نموذج الدخول: إخفاء كلمة مرور يعرفها كل من يُفترض أن يدخل
+   لا يحمي شيئًا، ويكلّف كل زائر سؤالًا. */
+.demo-banner {
+  background: var(--amber-soft);
+  border: 1px solid color-mix(in srgb, var(--amber) 38%, transparent);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin-bottom: 18px;
+}
+.demo-head { display: flex; gap: 9px; align-items: baseline; flex-wrap: wrap;
+  font-size: .82rem; color: var(--text-muted); line-height: 1.55; }
+.demo-tag { font-size: .72rem; font-weight: 700; color: var(--amber);
+  background: var(--surface); border: 1px solid color-mix(in srgb, var(--amber) 35%, transparent);
+  border-radius: 20px; padding: 3px 10px; flex: none; }
+.demo-creds { display: flex; gap: 22px; flex-wrap: wrap; margin: 12px 0 0; }
+.demo-creds div { display: flex; flex-direction: column; gap: 2px; }
+.demo-creds dt { font-size: .72rem; color: var(--text-muted); }
+.demo-creds dd { margin: 0; font-family: var(--font-mono); font-size: .86rem;
+  font-weight: 600; user-select: all; }
+.demo-fill { margin-top: 12px; }

@@ -10,6 +10,8 @@
         <span class="sub">{{ t('login_subtitle') }}</span>
       </div>
 
+      {% include "_demo_banner.html" %}
+
       {% if error %}<div class="alert error">{{ t('login_error') }}</div>{% endif %}
 
       <form method="post" action="/login" class="stack">

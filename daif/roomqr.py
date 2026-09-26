@@ -47,11 +47,14 @@ def _hotel_secret(tenant_slug: str, version: str) -> bytes:
     الاشتقاق مقصود: تسريب ملصق فندق لا يمكّن من تلفيق ملصق فندق آخر، ولا
     يُخزَّن سرّ مستقل لكل فندق.
     """
-    root = os.environ.get("DAIF_SECRET_KEY", "").strip()
+    root = (os.environ.get("DAIF_ROOM_SIGNING_KEY", "").strip()
+            or os.environ.get("DAIF_SECRET_KEY", "").strip())
     if not root:
-        raise RuntimeError(
-            "DAIF_SECRET_KEY غير مضبوط — لا يمكن توقيع أكواد الغرف بلا سرّ."
-        )
+        # مولَّد محفوظ: الملصقات تعمل بلا إعداد، وتبقى صالحة عبر إعادة النشر.
+        # ضبط المتغيّر أقوى — تسريب قاعدة البيانات لا يكشفه — لكن رفض العمل
+        # بدونه كان يوقف أول تشغيل عند من يريد أن يرى النظام قبل أن يضبطه.
+        from .secrets_store import get as stored
+        root = stored("roomqr")
     return hashlib.pbkdf2_hmac(
         "sha256", root.encode("utf-8"),
         f"roomqr:{tenant_slug}:{version}".encode("utf-8"), 120_000,
