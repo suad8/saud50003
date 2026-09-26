@@ -26,6 +26,8 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"   # مرتين
 | `ANTHROPIC_API_KEY` | مهم | بدونه **يشتغل النظام** لكن يحوّل كل سؤال لموظف بدل ما يجاوب |
 | `WHATSAPP_APP_SECRET` | لو تستخدم واتساب | يتحقق من توقيع الرسائل الواردة |
 | `WHATSAPP_VERIFY_TOKEN` | لو تستخدم واتساب | لتأكيد الـwebhook عند Meta |
+| `DAIF_BOOTSTRAP_ADMIN_EMAIL` | أول مرة | بريد أول مشغّل للمنصة |
+| `DAIF_BOOTSTRAP_ADMIN_PASSWORD` | أول مرة | ١٢ محرفًا فأكثر، وإلا يُتجاهل بصمت |
 | `DAIF_MODEL` | لا | الافتراضي `claude-opus-5` |
 | `PORT` | لا | تحقنه المنصة |
 
@@ -51,10 +53,20 @@ curl https://<نطاقك>/healthz          # لازم 200
 
 ## ٤) أول تشغيل
 
-1. افتح `/platform/login` — أول مشغّل يُنشأ من `DAIF_PLATFORM_EMAIL` و
-   `DAIF_PLATFORM_PASSWORD` لو ضبطتهما، وإلا أنشئه بـ:
+1. **أنشئ أول مشغّل للمنصة.** على منصات النشر ما فيه طرفية عند أول رفع،
+   فالطريقة الأسهل متغيّران تضبطهما قبل النشر:
+
+   | المتغيّر | ملاحظة |
+   |---|---|
+   | `DAIF_BOOTSTRAP_ADMIN_EMAIL` | بريدك |
+   | `DAIF_BOOTSTRAP_ADMIN_PASSWORD` | **١٢ محرفًا على الأقل**، وإلا لن يُنشأ الحساب |
+
+   يُنشأ الحساب مرة واحدة فقط: إعادة النشر لا تنشئ حسابًا ثانيًا ولا تُعيد
+   ضبط كلمة المرور. بعد أول دخول احذف المتغيّرين.
+
+   ولو كان عندك وصول للطرفية:
    ```bash
-   python -m daif.cli platform-admin --email you@example.com
+   python -m daif.cli create-admin you@example.com --password '<كلمة مرور طويلة>'
    ```
 2. أنشئ الفندق الأول من لوحة المنصة.
 3. من لوحة الفندق: **الإعدادات** → اختر وضع دخول النزيل.

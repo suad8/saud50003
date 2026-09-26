@@ -155,3 +155,36 @@ def test_a_complete_production_config_passes(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
     monkeypatch.setenv("WHATSAPP_APP_SECRET", "z" * 32)
     assert preflight.check() == []
+
+
+def test_deploy_guide_names_real_environment_variables():
+    """كل متغيّر في دليل النشر لا بد أن يكون موجودًا في الكود.
+
+    الدليل كان يذكر DAIF_PLATFORM_EMAIL و DAIF_PLATFORM_PASSWORD، والكود
+    يقرأ DAIF_BOOTSTRAP_ADMIN_*. من يتبع الدليل حرفيًا يرفع النظام ثم لا
+    يستطيع الدخول إليه — ولا شيء في السجل يفسّر السبب. انحراف الوثيقة عن
+    الكود هنا يكلّف نشرًا كاملًا.
+    """
+    import re
+
+    guide = (ROOT / "docs" / "DEPLOY.md").read_text("utf-8")
+    code = "\n".join(p.read_text("utf-8") for p in (ROOT / "daif").rglob("*.py"))
+    code += (ROOT / "scripts" / "start.sh").read_text("utf-8")
+    code += (ROOT / "Dockerfile").read_text("utf-8")
+
+    # أسماء المنصّات نفسها (تحقنها هي) ليست من مسؤوليتنا
+    injected = {"DATABASE_URL", "PORT"}
+    named = set(re.findall(r"\b(DAIF_[A-Z_]+|WHATSAPP_[A-Z_]+|ANTHROPIC_[A-Z_]+)\b", guide))
+    unknown = {v for v in named - injected if v not in code}
+    assert not unknown, f"الدليل يذكر متغيّرات لا وجود لها في الكود: {sorted(unknown)}"
+
+
+def test_deploy_guide_names_real_cli_commands():
+    """الدليل كان يذكر `platform-admin` والأمر الحقيقي `create-admin`."""
+    import re
+
+    guide = (ROOT / "docs" / "DEPLOY.md").read_text("utf-8")
+    cli = (ROOT / "daif" / "cli.py").read_text("utf-8")
+    real = set(re.findall(r'add_parser\("([^"]+)"', cli))
+    used = set(re.findall(r"python -m daif\.cli ([a-z-]+)", guide))
+    assert used <= real, f"أوامر غير موجودة: {sorted(used - real)} — المتاح {sorted(real)}"
