@@ -12,3 +12,23 @@
           data-email="{{ demo_email }}" data-pw="{{ demo.password }}">عبّها لي</button>
 </div>
 {% endif %}
+{% if can_seed_demo %}
+<div class="demo-banner" role="note">
+  <div class="demo-head">
+    <span class="demo-tag">منصة فارغة</span>
+    <span>ما فيها فندق ولا حساب بعد — فما عندك بيانات تدخل بها.</span>
+  </div>
+  <p class="demo-note">
+    اضغط الزر فيُجهَّز فندق عرض كامل: غرف وإقامات ورموز دخول وقاعدة معرفة
+    وتذاكر، وتظهر بيانات الدخول هنا فوق النموذج مباشرة.
+  </p>
+  <form method="post" action="/setup/demo">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="btn" type="submit">جهّز منصة العرض</button>
+  </form>
+  <p class="demo-note">
+    نشر حقيقي؟ لا تضغطه — أنشئ مشغّل المنصة بـ
+    <code dir="ltr">python -m daif.cli create-admin</code>.
+  </p>
+</div>
+{% endif %}

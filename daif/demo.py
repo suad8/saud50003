@@ -14,9 +14,11 @@ from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+ROOT = Path(__file__).resolve().parent.parent
 ROW = "demo_banner"
 
 
@@ -62,3 +64,94 @@ def banner(session) -> dict | None:
     except (ValueError, TypeError):
         logger.warning("محتوى شريط العرض غير صالح — تُجوهل.")
         return None
+
+
+# --- زرع منصة العرض ---
+
+PASSWORD = "Daif-Demo-2026"
+DEFAULT_HOTEL = "فندق طيبة"
+DEFAULT_SLUG = "taibah"
+DEFAULT_EMAIL = "admin@daif.sa"
+
+
+class Seeded:
+    """ما أُنشئ، ليطبعه سطر الأوامر أو يسجّله الخادم."""
+
+    def __init__(self, platform_email: str, staff_email: str,
+                 password: str, codes: list[tuple[str, str]]) -> None:
+        self.platform_email = platform_email
+        self.staff_email = staff_email
+        self.password = password
+        self.codes = codes
+
+
+def seed(session, *, hotel: str = DEFAULT_HOTEL, slug: str = DEFAULT_SLUG,
+         platform_email: str = DEFAULT_EMAIL,
+         password: str = PASSWORD) -> Seeded | None:
+    """يملأ منصة فارغة بفندق عرض كامل. يرجع None إن لم تكن فارغة.
+
+    مشترك بين أمر `demo` وأول إقلاع، عمدًا: نسختان من هذا الزرع كانتا
+    ستنحرفان، فيعرض الموقع بيانات دخول لا تطابق ما في قاعدة البيانات.
+    """
+    from datetime import timedelta
+
+    import yaml
+    from sqlalchemy import select
+
+    from . import stay as stay_mod
+    from .clock import now_riyadh
+    from .models import Fact, PlatformAdmin, StaffUser, Tenant, Ticket
+    from .security import hash_password
+
+    if session.scalar(select(Tenant).limit(1)) is not None:
+        return None
+
+    if session.scalar(select(PlatformAdmin).limit(1)) is None:
+        session.add(PlatformAdmin(email=platform_email, name="مشغّل المنصة",
+                                  password_hash=hash_password(password)))
+
+    tenant = Tenant(slug=slug, name=hotel, plan="pro",
+                    city="المدينة المنورة", access_mode="stay_code")
+    session.add(tenant)
+    session.flush()
+
+    staff_email = f"reem@{slug}.sa"
+    session.add(StaffUser(tenant_id=tenant.id, email=staff_email,
+                          name="ريم · الاستقبال", role="owner",
+                          password_hash=hash_password(password)))
+
+    # قاعدة المعرفة مفعّلة هنا خلافًا للفندق الحقيقي: العرض بلا حقائق ظاهرة
+    # يحوّل كل سؤال لموظف، فلا يُرى منه شيء.
+    records = yaml.safe_load((ROOT / "data" / "knowledge_base.yaml").read_text("utf-8"))
+    for rec in records:
+        session.add(Fact(
+            tenant_id=tenant.id, key=rec["id"], text=rec["text"],
+            topic=rec.get("topic", ""), active=True,
+            seasons=",".join(rec.get("seasons", ["normal", "ramadan", "hajj"])),
+            hours=rec.get("hours", "") or "",
+            paid=bool(rec.get("paid", False)),
+        ))
+
+    today = now_riyadh().date()
+    codes: list[tuple[str, str]] = []
+    for room, name, phone in [("402", "أحمد الغامدي", "966500000001"),
+                              ("318", "محمد أسلم", "923000000002"),
+                              ("215", "Siti Rahayu", "628100000003")]:
+        st = stay_mod.open_stay(session, tenant.id, room, guest_name=name,
+                                phone=phone, checkout_on=today + timedelta(days=3))
+        codes.append((room, st.stay_code))
+
+    enable(session, platform_email=platform_email, staff_email=staff_email,
+           password=password, hotel=hotel)
+
+    now = now_riyadh()
+    for ty, room, detail, urg, status in [
+        ("صيانة", "318", "المكيف ما يبرّد — مكرّرة من أمس", "urgent", "open"),
+        ("تدبير فندقي", "512", "مناشف إضافية ووسادة", "normal", "open"),
+        ("تدبير فندقي", "407", "تنظيف الغرفة الساعة ٤ العصر", "normal", "in_progress"),
+        ("صيانة", "233", "الدش ماؤه بارد", "normal", "done"),
+    ]:
+        session.add(Ticket(tenant_id=tenant.id, type=ty, room=room, detail=detail,
+                           urgency=urg, status=status, created_at=now))
+
+    return Seeded(platform_email, staff_email, password, codes)

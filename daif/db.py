@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+import logging
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from .config import get_settings
 from .models import Base
+
+logger = logging.getLogger(__name__)
 
 _engine: Engine | None = None
 _SessionFactory: sessionmaker[Session] | None = None
@@ -26,6 +29,31 @@ def _prepare_sqlite_path(url: str) -> None:
             path.parent.mkdir(parents=True, exist_ok=True)
 
 
+def _tune_sqlite(engine: Engine) -> None:
+    """يفعّل WAL ومهلة انتظار على كل اتصال SQLite.
+
+    بلا WAL يستعمل SQLite دفتر تراجع، وفيه قارئٌ واحد مفتوح يمنع أي كاتب —
+    فتقع «database is locked». وهذا يقع عندنا فعلًا: طلبٌ يقرأ ضمن معاملته
+    بينما `secrets_store` يفتح اتصالًا ثانيًا ليحفظ سرًّا وُلّد لتوّه، فيقفل
+    كلٌّ على الآخر. ومع WAL يتزامن قارئ وكاتب بلا تعارض.
+
+    والمهلة تحمي ما تبقّى: كاتبان متزامنان ينتظر أحدهما بدل أن يفشل فورًا.
+    """
+
+    @event.listens_for(engine, "connect")
+    def _set_pragmas(dbapi_connection, _record):  # pragma: no cover - غلاف رقيق
+        cursor = dbapi_connection.cursor()
+        try:
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA busy_timeout=5000")
+        except Exception:
+            # WAL غير مدعوم على بعض أنظمة الملفات (الشبكية مثلًا). الافتراضي
+            # يبقى صالحًا، والتنازل عن تحسين أهون من رفض الاتصال.
+            logger.debug("تعذّر ضبط PRAGMA على SQLite", exc_info=True)
+        finally:
+            cursor.close()
+
+
 def get_engine(url: str | None = None) -> Engine:
     global _engine, _SessionFactory
     if _engine is None or url is not None:
@@ -33,6 +61,8 @@ def get_engine(url: str | None = None) -> Engine:
         _prepare_sqlite_path(target)
         connect_args = {"check_same_thread": False} if target.startswith("sqlite") else {}
         _engine = create_engine(target, future=True, connect_args=connect_args)
+        if target.startswith("sqlite"):
+            _tune_sqlite(_engine)
         _SessionFactory = sessionmaker(bind=_engine, expire_on_commit=False, future=True)
     return _engine
 

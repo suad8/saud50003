@@ -15,7 +15,7 @@ import logging
 import os
 import secrets
 
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 
 logger = logging.getLogger(__name__)
 
@@ -49,25 +49,50 @@ def _load_or_create(name: str) -> str:
     from .db import session_scope
     from .models import PlatformSecret
 
-    with session_scope() as session:
-        row = session.get(PlatformSecret, name)
-        if row is not None:
-            return row.value
-
-        fresh = secrets.token_urlsafe(48)
-        session.add(PlatformSecret(name=name, value=fresh))
-        try:
-            session.flush()
-        except IntegrityError:
-            # سبقنا خادم آخر إلى الإنشاء — نقرأ قيمته بدل أن نكتب فوقها.
-            session.rollback()
+    try:
+        with session_scope() as session:
             row = session.get(PlatformSecret, name)
             if row is not None:
                 return row.value
-            raise
-        logger.info("وُلّد سرّ المنصة «%s» وحُفظ. اضبط %s لتثبيته خارج قاعدة البيانات.",
-                    name, MANAGED.get(name, "-"))
-        return fresh
+
+            fresh = secrets.token_urlsafe(48)
+            session.add(PlatformSecret(name=name, value=fresh))
+            try:
+                session.flush()
+            except IntegrityError:
+                # سبقنا خادم آخر إلى الإنشاء — نقرأ قيمته بدل أن نكتب فوقها.
+                session.rollback()
+                row = session.get(PlatformSecret, name)
+                if row is not None:
+                    return row.value
+                raise
+            logger.info(
+                "وُلّد سرّ المنصة «%s» وحُفظ. اضبط %s لتثبيته خارج قاعدة البيانات.",
+                name, MANAGED.get(name, "-"))
+            return fresh
+    except OperationalError:
+        # قاعدة البيانات مقفلة الآن — وهو وارد على SQLite حين يكون للطلب
+        # معاملة كتابة مفتوحة ونفتح نحن اتصالًا ثانيًا لنحفظ سرًّا وُلّد
+        # لتوّه. إفشال تسجيل دخول لأننا لم نستطع *حفظ* السرّ أسوأ من
+        # استعماله بلا حفظ: نولّده لهذا التشغيل ونحاول الحفظ لاحقًا.
+        logger.warning(
+            "تعذّر حفظ سرّ المنصة «%s» — يُستعمل مولَّدًا لهذا التشغيل. "
+            "اضبط %s ليثبت عبر إعادات التشغيل.",
+            name, MANAGED.get(name, "-"), exc_info=True)
+        return secrets.token_urlsafe(48)
+
+
+def warm() -> None:
+    """يولّد الأسرار المدارة ويحفظها قبل أول طلب.
+
+    الحفظ أثناء طلب يفتح اتصالًا ثانيًا بينما معاملة الطلب قائمة. تسخينها
+    عند الإقلاع يجعل كل قراءة بعدها إصابةَ ذاكرة، فلا كتابة أصلًا.
+    """
+    for name in MANAGED:
+        try:
+            get(name)
+        except Exception:  # pragma: no cover - التسخين لا يمنع الإقلاع أبدًا
+            logger.warning("تعذّر تسخين سرّ المنصة «%s»", name, exc_info=True)
 
 
 def reset_cache() -> None:

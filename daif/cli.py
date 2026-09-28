@@ -181,69 +181,19 @@ def cmd_demo(args: argparse.Namespace) -> int:
     وهو مرفوض على قاعدة بيانات فيها بيانات: العرض يُجهَّز مرة على منصة
     فارغة، ولا يُقحَم على فندق يعمل.
     """
-    from datetime import timedelta
-
-    from . import stay as stay_mod
-    from .clock import now_riyadh
-    from .models import Fact, PlatformAdmin, StaffUser, Tenant, Ticket
-    from .security import hash_password
+    from . import demo as demo_mod
 
     init_db()
     with session_scope() as session:
-        if session.scalar(select(Tenant).limit(1)) is not None:
+        seeded = demo_mod.seed(session, hotel=args.hotel, slug=args.slug,
+                               platform_email=args.email, password=DEMO_PW)
+        if seeded is None:
             print("‼ توجد فنادق في قاعدة البيانات. أمر العرض للمنصة الفارغة وحدها.")
             print("  أنشئ فندقًا من /platform، أو استعمل create-hotel.")
             return 1
-
-        admin_email = args.email
-        if session.scalar(select(PlatformAdmin).limit(1)) is None:
-            session.add(PlatformAdmin(email=admin_email, name="مشغّل المنصة",
-                                      password_hash=hash_password(DEMO_PW)))
-
-        hotel = Tenant(slug=args.slug, name=args.hotel, plan="pro",
-                       city="المدينة المنورة", access_mode="stay_code")
-        session.add(hotel)
-        session.flush()
-
-        staff_email = f"reem@{args.slug}.sa"
-        session.add(StaffUser(tenant_id=hotel.id, email=staff_email,
-                              name="ريم · الاستقبال", role="owner",
-                              password_hash=hash_password(DEMO_PW)))
-
-        # قاعدة المعرفة مفعّلة هنا خلافًا للفندق الحقيقي: العرض بلا حقائق
-        # ظاهرة يحوّل كل سؤال، فلا يُرى منه شيء.
-        records = yaml.safe_load((ROOT / "data" / "knowledge_base.yaml").read_text("utf-8"))
-        for rec in records:
-            session.add(Fact(
-                tenant_id=hotel.id, key=rec["id"], text=rec["text"],
-                topic=rec.get("topic", ""), active=True,
-                seasons=",".join(rec.get("seasons", ["normal", "ramadan", "hajj"])),
-                hours=rec.get("hours", "") or "",
-                paid=bool(rec.get("paid", False)),
-            ))
-
-        today = now_riyadh().date()
-        codes = []
-        for room, name, phone in [("402", "أحمد الغامدي", "966500000001"),
-                                  ("318", "محمد أسلم", "923000000002"),
-                                  ("215", "Siti Rahayu", "628100000003")]:
-            st = stay_mod.open_stay(session, hotel.id, room, guest_name=name,
-                                    phone=phone, checkout_on=today + timedelta(days=3))
-            codes.append((room, st.stay_code))
-
-        from . import demo as demo_mod
-        demo_mod.enable(session, platform_email=admin_email, staff_email=staff_email,
-                        password=DEMO_PW, hotel=args.hotel)
-
-        now = now_riyadh()
-        for ty, room, detail, urg, status in [
-            ("صيانة", "318", "المكيف ما يبرّد — مكرّرة من أمس", "urgent", "open"),
-            ("تدبير فندقي", "512", "مناشف إضافية ووسادة", "normal", "open"),
-            ("تدبير فندقي", "407", "تنظيف الغرفة الساعة ٤ العصر", "normal", "in_progress"),
-            ("صيانة", "233", "الدش ماؤه بارد", "normal", "done"),
-        ]:
-            session.add(Ticket(tenant_id=hotel.id, type=ty, room=room, detail=detail,
-                               urgency=urg, status=status, created_at=now))
+        admin_email = seeded.platform_email
+        staff_email = seeded.staff_email
+        codes = seeded.codes
 
     base = args.url.rstrip("/") if args.url else "https://<نطاقك>"
     line = "─" * 54

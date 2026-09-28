@@ -23,7 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
-from .. import apikeys, authz
+from .. import apikeys, authz, secrets_store
 from ..assistant import Assistant
 from ..clock import now_riyadh, parse_date
 from ..config import get_settings
@@ -160,6 +160,8 @@ def _startup() -> None:
         logger.error("التطبيق موقوف — الخادم يعرض صفحة الفحص على كل مسار.")
         return
     init_db()
+    # قبل أول طلب: الحفظ أثناء طلب يفتح اتصالًا ثانيًا ومعاملته قائمة.
+    secrets_store.warm()
     _bootstrap_admin()
 
 
@@ -277,14 +279,27 @@ def _require(principal: Principal, permission: str) -> None:
         raise HTTPException(status_code=403, detail="لا تملك صلاحية هذا الإجراء")
 
 
+def _platform_is_empty(session) -> bool:
+    """لا فندق واحد بعد — أي أن المنصة لم تُستعمل قط."""
+    from sqlalchemy import select
+
+    from ..models import Tenant
+
+    return session.scalar(select(Tenant).limit(1)) is None
+
+
 def _demo_ctx(session, which: str) -> dict:
-    """سياق شريط المنصة التجريبية، أو فارغ حين يكون الوضع مطفأً."""
+    """سياق شريط المنصة التجريبية، أو عرض التجهيز حين تكون المنصة فارغة."""
     from .. import demo as demo_mod
 
     info = demo_mod.banner(session)
     if not info:
-        return {"demo": None}
-    return {"demo": info,
+        # منصة فارغة تمامًا: لا مشغّل ولا فندق ولا حساب. زائرها يجد نموذج
+        # دخول لا يملك له بيانات، والتجهيز من سطر الأوامر يحتاج طرفية
+        # موصولة بقاعدة البيانات نفسها — أصعب خطوة في النشر كله. فنعرض
+        # الزر هنا بدل زرعٍ تلقائي يفرض فندقًا وهميًا على نشر حقيقي.
+        return {"demo": None, "can_seed_demo": _platform_is_empty(session)}
+    return {"demo": info, "can_seed_demo": False,
             "demo_email": info.get("platform_email" if which == "platform" else "staff_email", "")}
 
 
@@ -338,6 +353,28 @@ def login_form(request: Request,
     return _template(request, "login.html",
                      {"t": t, "locales": LOCALES, "error": False,
                       **_demo_ctx(session, "hotel")})
+
+
+@app.post("/setup/demo")
+def setup_demo(request: Request,
+               session: Session = Depends(get_session)) -> Response:
+    """يجهّز منصة عرض كاملة بضغطة، وعلى المنصة الفارغة وحدها.
+
+    الشرط هو الحماية كلها: ما إن يوجد فندق واحد حتى يصير المسار مرفوضًا
+    للأبد، فلا يُقحَم عرضٌ على نظام يعمل ولا تُستبدل بيانات أحد. وقبل ذلك
+    لا يوجد ما يُحمى: الحالة البديلة موقعٌ لا يستطيع أحد دخوله.
+    """
+    from .. import demo as demo_mod
+
+    if not _platform_is_empty(session):
+        raise HTTPException(status_code=409, detail="المنصة ليست فارغة")
+
+    seeded = demo_mod.seed(session)
+    if seeded is None:            # سبقنا طلب آخر بين الفحص والزرع
+        raise HTTPException(status_code=409, detail="المنصة ليست فارغة")
+    session.commit()
+    logger.warning("زُرعت منصة عرض من الويب. للإطفاء: python -m daif.cli demo-off")
+    return RedirectResponse("/login", status_code=303)
 
 
 @app.post("/login")

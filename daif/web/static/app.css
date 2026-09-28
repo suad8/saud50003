@@ -438,3 +438,8 @@ details.inline-form[open] > summary { margin-bottom: 14px; }
 .demo-creds dd { margin: 0; font-family: var(--font-mono); font-size: .86rem;
   font-weight: 600; user-select: all; }
 .demo-fill { margin-top: 12px; }
+
+.demo-note { margin: 8px 0 0; font-size: .86rem; line-height: 1.7; color: inherit; opacity: .85 }
+.demo-note code { font-size: .82rem; padding: 1px 5px; border-radius: 4px;
+  background: rgba(0,0,0,.08) }
+.demo-banner form { margin-top: 10px }
