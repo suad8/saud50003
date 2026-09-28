@@ -25,20 +25,58 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+# أسماء المتغيّر التي تحقنها منصات النشر لعنوان Postgres. Railway وحدها
+# تستعمل ثلاثة منها حسب طريقة الربط، وHeroku وRender وFly لكلٍّ اسمه. نقرأها
+# كلها بدل أن يُرفض إقلاع سليم لأن الناشر نسخ الاسم الآخر.
+PG_URL_ENV_NAMES = (
+    "DAIF_DATABASE_URL",
+    "DATABASE_URL",
+    "DATABASE_PRIVATE_URL",
+    "DATABASE_PUBLIC_URL",
+    "POSTGRES_URL",
+    "POSTGRESQL_URL",
+)
+
+
+def _pg_url_from_parts() -> str:
+    """يركّب العنوان من متغيّرات libpq المنفصلة إن وُجدت بلا عنوان كامل."""
+    host = _env("PGHOST", "")
+    name = _env("PGDATABASE", "")
+    user = _env("PGUSER", "")
+    if not (host and name and user):
+        return ""
+    from urllib.parse import quote
+
+    password = _env("PGPASSWORD", "")
+    auth = quote(user, safe="")
+    if password:
+        auth += ":" + quote(password, safe="")
+    port = _env("PGPORT", "5432")
+    return f"postgresql+psycopg://{auth}@{host}:{port}/{name}"
+
+
+def discovered_database_url() -> str:
+    """العنوان الذي وجدناه في البيئة، أو فراغ إن لم يُضبط أي اسم.
+
+    مفصول عن `_database_url` كي يستعمله فحص ما قبل الإقلاع بنفس المنطق: أسوأ
+    ما قد يحصل أن يوقف الفحص إقلاعًا كانت قاعدة البيانات فيه موجودة فعلًا.
+    يرجع ما وُجد كما هو — حتى لو كان SQLite صريحًا؛ الحكم على نوعه ليس هنا.
+    """
+    for name in PG_URL_ENV_NAMES:
+        value = _env(name, "")
+        if value:
+            return _normalise_pg(value)
+    return _pg_url_from_parts()
+
+
 def _database_url() -> str:
     """عنوان قاعدة البيانات، مع تكيّف مع منصات النشر.
 
-    Railway و Heroku وأمثالهما يحقنون `DATABASE_URL` تلقائيًا عند ربط قاعدة
-    بيانات، وبصيغة `postgres://` أو `postgresql://` التي لا يفهمها SQLAlchemy 2
-    بلا اسم المشغّل. نحوّلها هنا بدل أن يكتشف المشغّل الخطأ عند أول إقلاع.
+    Railway وHeroku وأمثالهما يحقنون العنوان عند ربط قاعدة بيانات، وبصيغة
+    `postgres://` أو `postgresql://` التي لا يفهمها SQLAlchemy 2 بلا اسم
+    المشغّل. نحوّلها هنا بدل أن يكتشف المشغّل الخطأ عند أول إقلاع.
     """
-    explicit = _env("DAIF_DATABASE_URL", "")
-    if explicit:
-        return _normalise_pg(explicit)
-    injected = _env("DATABASE_URL", "")
-    if injected:
-        return _normalise_pg(injected)
-    return "sqlite:///var/daif.db"
+    return discovered_database_url() or "sqlite:///var/daif.db"
 
 
 def _normalise_pg(url: str) -> str:

@@ -142,6 +142,13 @@ app.include_router(_api_router)
 app.include_router(_guest_setup(templates))
 
 
+# حين يكون الإعداد ناقصًا نبقى قائمين ونشرح، ولا نسقط.
+# «Application failed to respond» لا تقول شيئًا لمن ينشر أول مرة، ولا تدلّه
+# على سجل النشر ولا على المتغيّر الواحد الناقص. فالخادم الذي لا يستطيع خدمة
+# التطبيق يبقى ليقول لماذا.
+_BLOCKED: list[preflight.Problem] = []
+
+
 @app.on_event("startup")
 def _startup() -> None:
     problems = preflight.check()
@@ -149,12 +156,25 @@ def _startup() -> None:
         logger.warning("فحص ما قبل الإقلاع:\n%s", preflight.summary(problems))
     fatal = [p for p in problems if p.fatal]
     if fatal:
-        raise preflight.ConfigurationError(
-            "الإقلاع متوقّف — إعداد الإنتاج ناقص:\n"
-            + preflight.summary(fatal)
-        )
+        _BLOCKED[:] = problems
+        logger.error("التطبيق موقوف — الخادم يعرض صفحة الفحص على كل مسار.")
+        return
     init_db()
     _bootstrap_admin()
+
+
+@app.middleware("http")
+async def _config_gate(request: Request, call_next):
+    """يعرض صفحة الفحص بدل التطبيق حين يكون الإعداد ناقصًا.
+
+    `/healthz` يبقى ٢٠٠: العملية حيّة، والاستضافة يجب أن توجّه إليها الزوّار
+    ليروا سبب العطل. الحالة الحقيقية في `/readyz`.
+    """
+    if _BLOCKED and request.url.path not in ("/healthz", "/static"):
+        if request.url.path.startswith("/static/"):
+            return await call_next(request)
+        return HTMLResponse(preflight.diagnostic_html(_BLOCKED), status_code=503)
+    return await call_next(request)
 
 
 def _bootstrap_admin() -> None:
