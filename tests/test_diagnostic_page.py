@@ -18,7 +18,9 @@ def blocked(monkeypatch, tmp_path):
     from daif.web import app as app_module
 
     monkeypatch.setenv("DAIF_ENV", "production")
-    monkeypatch.setenv("DAIF_DATABASE_URL", "sqlite:///./daif.db")   # قاتل في الإنتاج
+    # مسار مؤقت: التأكيد على أن العنوان sqlite، لا على مكانه. ومسار نسبي
+    # هنا كان يترك ملف قاعدة بيانات في جذر المستودع بعد كل تشغيل.
+    monkeypatch.setenv("DAIF_DATABASE_URL", f"sqlite:///{tmp_path}/blocked.db")
     monkeypatch.delenv("STARTUP_ERROR_FILE", raising=False)
     with TestClient(app_module.app) as client:
         yield client
@@ -101,27 +103,17 @@ def test_the_page_escapes_what_it_shows(monkeypatch, tmp_path):
 # --- اكتشاف قاعدة البيانات عبر الأسماء التي تحقنها المنصات ---
 
 
-@pytest.mark.parametrize(
-    "name",
-    ["DAIF_DATABASE_URL", "DATABASE_URL", "DATABASE_PRIVATE_URL",
-     "DATABASE_PUBLIC_URL", "POSTGRES_URL", "POSTGRESQL_URL"],
-)
-def test_any_known_env_name_is_accepted(monkeypatch, name):
+@pytest.mark.parametrize("name", config.PG_URL_ENV_NAMES)
+def test_any_known_env_name_is_accepted(monkeypatch, no_database_env, name):
     """اسم واحد من هذه يكفي — ولا يمنع الإقلاع لأن الناشر نسخ الاسم الآخر."""
-    for other in config.PG_URL_ENV_NAMES:
-        monkeypatch.delenv(other, raising=False)
-    for part in ("PGHOST", "PGDATABASE", "PGUSER", "PGPASSWORD", "PGPORT"):
-        monkeypatch.delenv(part, raising=False)
     monkeypatch.setenv(name, "postgres://u:p@h:5432/d")
 
     assert config.discovered_database_url() == "postgresql+psycopg://u:p@h:5432/d"
     assert not [p for p in preflight.check(production=True) if p.key == "DATABASE_URL"]
 
 
-def test_libpq_parts_are_assembled(monkeypatch):
+def test_libpq_parts_are_assembled(monkeypatch, no_database_env):
     """بعض المنصات تحقن الأجزاء المنفصلة بلا عنوان كامل."""
-    for other in config.PG_URL_ENV_NAMES:
-        monkeypatch.delenv(other, raising=False)
     monkeypatch.setenv("PGHOST", "db.internal")
     monkeypatch.setenv("PGDATABASE", "daif")
     monkeypatch.setenv("PGUSER", "postgres")
@@ -132,13 +124,8 @@ def test_libpq_parts_are_assembled(monkeypatch):
     assert url == "postgresql+psycopg://postgres:p%40ss%20word@db.internal:5433/daif"
 
 
-def test_missing_database_names_the_variables_it_looked_for(monkeypatch):
+def test_missing_database_names_the_variables_it_looked_for(no_database_env):
     """رسالة العطل تسمّي ما بحثنا عنه، فيعرف الناشر أي اسم يضيف."""
-    for other in config.PG_URL_ENV_NAMES:
-        monkeypatch.delenv(other, raising=False)
-    for part in ("PGHOST", "PGDATABASE", "PGUSER"):
-        monkeypatch.delenv(part, raising=False)
-
     problems = [p for p in preflight.check(production=True) if p.key == "DATABASE_URL"]
     assert problems and problems[0].fatal
     assert "DATABASE_PRIVATE_URL" in problems[0].detail

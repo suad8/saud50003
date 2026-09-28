@@ -97,18 +97,18 @@ def test_health_endpoint_answers_without_a_model_key(monkeypatch):
 
 # --- فحص ما قبل الإقلاع -----------------------------------------------------
 
-def test_dev_run_is_not_blocked(monkeypatch):
+def test_dev_run_is_not_blocked(monkeypatch, no_database_env):
     """التطوير المحلي يمرّ بتنبيه لا بمنع."""
     from daif import preflight
 
     for key in ("DAIF_ENV", "DAIF_SECRET_KEY", "DAIF_DASHBOARD_SECRET",
-                "ANTHROPIC_API_KEY", "DAIF_DATABASE_URL", "DATABASE_URL"):
+                "ANTHROPIC_API_KEY"):
         monkeypatch.delenv(key, raising=False)
     problems = preflight.check()
     assert problems and not any(p.fatal for p in problems)
 
 
-def test_production_without_a_real_database_refuses_to_boot(monkeypatch):
+def test_production_without_a_real_database_refuses_to_boot(monkeypatch, no_database_env):
     """خادم لا يقوم يُرى في دقيقة؛ خادم بنصف إعداد يُكتشف بعد أسبوع.
 
     الأسرار لم تعد ضمن ما يمنع الإقلاع: صارت المنصة تولّدها وتحفظها، فتعمل
@@ -118,21 +118,20 @@ def test_production_without_a_real_database_refuses_to_boot(monkeypatch):
     from daif import preflight
 
     monkeypatch.setenv("DAIF_ENV", "production")
-    for key in ("DAIF_SECRET_KEY", "DAIF_DASHBOARD_SECRET",
-                "DAIF_DATABASE_URL", "DATABASE_URL"):
+    for key in ("DAIF_SECRET_KEY", "DAIF_DASHBOARD_SECRET"):
         monkeypatch.delenv(key, raising=False)
     fatal = [p.key for p in preflight.check() if p.fatal]
     assert fatal == ["DATABASE_URL"], f"يمنع الإقلاع لأسباب غير متوقّعة: {fatal}"
 
 
-def test_production_on_sqlite_is_fatal(monkeypatch):
+def test_production_on_sqlite_is_fatal(monkeypatch, tmp_path):
     """قرص منصات النشر مؤقت — SQLite يعني فقدان كل شيء مع كل نشر."""
     from daif import preflight
 
     monkeypatch.setenv("DAIF_ENV", "production")
     monkeypatch.setenv("DAIF_SECRET_KEY", "x" * 40)
     monkeypatch.setenv("DAIF_DASHBOARD_SECRET", "y" * 40)
-    monkeypatch.setenv("DAIF_DATABASE_URL", "sqlite:///./daif.db")
+    monkeypatch.setenv("DAIF_DATABASE_URL", f"sqlite:///{tmp_path}/x.db")
     assert "DATABASE_URL" in [p.key for p in preflight.check() if p.fatal]
 
 

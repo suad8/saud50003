@@ -114,10 +114,10 @@ def test_but_it_still_warns_about_them(monkeypatch):
     assert "DAIF_SECRET_KEY" in warned and "DAIF_DASHBOARD_SECRET" in warned
 
 
-def test_sqlite_in_production_is_still_fatal(monkeypatch):
+def test_sqlite_in_production_is_still_fatal(monkeypatch, tmp_path):
     """القرص المؤقت ما زال يفقد البيانات — هذا لم يتغيّر."""
     from daif import preflight
 
     monkeypatch.setenv("DAIF_ENV", "production")
-    monkeypatch.setenv("DAIF_DATABASE_URL", "sqlite:///./daif.db")
+    monkeypatch.setenv("DAIF_DATABASE_URL", f"sqlite:///{tmp_path}/x.db")
     assert "DATABASE_URL" in [p.key for p in preflight.check() if p.fatal]

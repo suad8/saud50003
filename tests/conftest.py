@@ -107,3 +107,19 @@ def _fresh_rate_limits():
     with limiter._lock:
         limiter._hits.clear()
     yield
+
+
+@pytest.fixture
+def no_database_env(monkeypatch):
+    """يمسح كل اسم قد يُكتشف منه عنوان قاعدة البيانات.
+
+    قائمة أسماء مكتوبة يدويًا داخل كل اختبار كانت ستنحرف عن قائمة الاكتشاف
+    الحقيقية — وهو بالضبط العطل الذي وحّدنا الاكتشاف لأجله. هنا نشتقّها من
+    المصدر نفسه، فما يُضاف هناك يُمسح هنا بلا تعديل.
+    """
+    from daif.config import PG_URL_ENV_NAMES
+
+    for name in PG_URL_ENV_NAMES:
+        monkeypatch.delenv(name, raising=False)
+    for part in ("PGHOST", "PGDATABASE", "PGUSER", "PGPASSWORD", "PGPORT"):
+        monkeypatch.delenv(part, raising=False)
