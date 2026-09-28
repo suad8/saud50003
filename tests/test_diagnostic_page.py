@@ -140,3 +140,61 @@ def test_the_blocking_problem_is_listed_first(monkeypatch):
     ]
     html = preflight.diagnostic_html(problems)
     assert html.index("DATABASE_URL") < html.index("ANTHROPIC_API_KEY")
+
+
+# --- المرجع في خانة الاسم بدل خانة القيمة ---
+
+
+REF_NAME = "${{ Postgres.DATABASE_URL }}"
+
+
+def test_a_reference_pasted_into_the_name_field_is_named(monkeypatch, no_database_env):
+    """غلط صامت تمامًا: Railway تأخذ الاسم حرفيًا فلا يقرؤه أحد.
+
+    بلا كشفه تقول الصفحة «ما لقيت عنوانًا» فقط، والناشر يعيد نفس الخطأ.
+    """
+    monkeypatch.setenv(REF_NAME, "postgresql://u@h/d")
+
+    keys = [p.key for p in preflight.check(production=True)]
+    assert "خانة الاسم" in keys
+    detail = next(p.detail for p in preflight.check(production=True)
+                  if p.key == "خانة الاسم")
+    assert REF_NAME in detail
+
+
+def test_the_fix_shown_is_the_misplaced_one_not_the_generic_link_guide(
+    monkeypatch, no_database_env
+):
+    """الشرح العام «كيف تربط قاعدة البيانات» يقود لإعادة نفس الخطأ حرفيًا."""
+    monkeypatch.setenv(REF_NAME, "postgresql://u@h/d")
+
+    html = preflight.diagnostic_html(preflight.check(production=True))
+    assert "المرجع في الخانة الغلط" in html
+    assert "كيف تربط قاعدة البيانات" not in html
+
+
+def test_the_misplaced_name_is_listed_above_the_other_notes(monkeypatch, no_database_env):
+    """سبب العطل لا يُدفن بين ملاحظات واتساب ومفتاح النموذج."""
+    monkeypatch.setenv(REF_NAME, "postgresql://u@h/d")
+    monkeypatch.setenv("DAIF_ENV", "production")
+
+    html = preflight.diagnostic_html(preflight.check())
+    assert html.index("خانة الاسم") < html.index("WHATSAPP_APP_SECRET")
+
+
+def test_ordinary_variable_names_are_not_flagged(monkeypatch, no_database_env):
+    """لا إنذار كاذب على أسماء سليمة."""
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u@h/d")
+    monkeypatch.setenv("RAILWAY_PUBLIC_DOMAIN", "x.up.railway.app")
+
+    assert preflight.misplaced_references() == []
+
+
+def test_the_page_never_prints_the_value_of_a_misplaced_variable(
+    monkeypatch, no_database_env
+):
+    """صفحة تشخيص عامة — طباعة القيم تسرّب كلمة مرور قاعدة البيانات."""
+    monkeypatch.setenv(REF_NAME, "postgresql://user:SUPERSECRET@host/db")
+
+    html = preflight.diagnostic_html(preflight.check(production=True))
+    assert "SUPERSECRET" not in html

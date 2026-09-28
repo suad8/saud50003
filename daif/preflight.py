@@ -43,6 +43,23 @@ def startup_error() -> str:
         return ""
 
 
+# مرجع منصّة كُتب في خانة الاسم بدل خانة القيمة. Railway وأمثالها تأخذ
+# الاسم حرفيًا، فينشأ متغيّر اسمه "${{ Postgres.DATABASE_URL }}" لا يقرؤه
+# أحد، ويظنّ الناشر أنه ربط قاعدة البيانات. غلط شائع وصامت تمامًا.
+REFERENCE_MARKERS = ("${{", "}}", "${")
+
+
+def misplaced_references() -> list[str]:
+    """أسماء متغيّرات تبدو مراجع منصّة وُضعت في خانة الاسم.
+
+    نرجع الأسماء فقط ولا نلمس القيم: صفحة تشخيص عامة لا يجوز أن تطبع سرًّا.
+    """
+    return sorted(
+        name for name in os.environ
+        if any(marker in name for marker in REFERENCE_MARKERS)
+    )
+
+
 def check(*, production: bool | None = None) -> list[Problem]:
     production = is_production() if production is None else production
     found: list[Problem] = []
@@ -83,6 +100,17 @@ def check(*, production: bool | None = None) -> list[Problem]:
     # نستعمل نفس دالة الاكتشاف التي يستعملها التطبيق، لا قراءة متغيّر واحد:
     # فحص يقرأ اسمًا والتطبيق يقرأ آخر = إما منْع إقلاع سليم أو السماح بمعطوب.
     from .config import PG_URL_ENV_NAMES, discovered_database_url
+
+    # نفحص هذا قبل قاعدة البيانات: حين يقع، يكون هو السبب الحقيقي لغيابها،
+    # ورسالة «ما لقيت عنوانًا» وحدها تترك الناشر يعيد نفس الخطأ.
+    for name in misplaced_references():
+        found.append(Problem(
+            "خانة الاسم",
+            f"عندك متغيّر اسمه: {name} — هذا مرجع منصّة كُتب في خانة الاسم "
+            "بدل خانة القيمة، فما يقرؤه أحد. احذفه، وأنشئ متغيّرًا اسمه "
+            "DATABASE_URL وضع المرجع في خانة القيمة.",
+            fatal=False,
+        ))
 
     url = discovered_database_url()
     if production and (not url or url.startswith("sqlite")):
@@ -126,8 +154,14 @@ def diagnostic_html(problems: list[Problem]) -> str:
     أن يخدم التطبيق يبقى قائمًا ليقول لماذا — هذا أنفع من موت صامت.
     """
     rows = []
-    # القاتل أولًا: هو وحده الذي يمنع الإقلاع، وما عداه ملاحظات تنتظر.
-    for p in sorted(problems, key=lambda item: not item.fatal):
+    # القاتل أولًا لأنه وحده يمنع الإقلاع، ثم المرجع في خانة الاسم لأنه سببه
+    # غالبًا، ثم بقية الملاحظات. ترتيب يقرؤه الناشر من أعلى لأسفل فيصلح.
+    def _rank(item: Problem) -> int:
+        if item.fatal:
+            return 0
+        return 1 if item.key == "خانة الاسم" else 2
+
+    for p in sorted(problems, key=_rank):
         tone = "bad" if p.fatal else "warn"
         mark = "✕" if p.fatal else "!"
         rows.append(
@@ -137,7 +171,14 @@ def diagnostic_html(problems: list[Problem]) -> str:
     fatal = [p for p in problems if p.fatal]
     head = ("الإعداد ناقص — الخادم قائم والتطبيق موقوف" if fatal
             else "الخادم يعمل، ومعه ملاحظات")
-    fix = FIXES.get(fatal[0].key, DEFAULT_FIX) if fatal else ""
+    # مرجع في خانة الاسم يسبق كل شرح آخر: هو سبب غياب قاعدة البيانات، وشرحُ
+    # «كيف تربطها» وحده يقود الناشر لإعادة نفس الخطأ حرفيًا.
+    if any(p.key == "خانة الاسم" for p in problems):
+        fix = FIXES["خانة الاسم"]
+    elif fatal:
+        fix = FIXES.get(fatal[0].key, DEFAULT_FIX)
+    else:
+        fix = ""
 
     return f"""<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -186,6 +227,19 @@ DEFAULT_FIX = """<div class="c"><h2>كيف تضبطها</h2>
 <p class="lede">من Variables في الاستضافة، أضف المتغيّرات المعلَّمة بـ ✕ ثم أعد النشر.</p></div>"""
 
 FIXES = {
+    "خانة الاسم": """<div class="c"><h2>المرجع في الخانة الغلط</h2>
+<p>أُنشئ متغيّر <b>اسمه</b> هو المرجع نفسه. Railway تأخذ الاسم حرفيًا، فما
+صار هناك متغيّر باسم <code>DATABASE_URL</code> يقرؤه التطبيق.</p>
+<p><b>الصح:</b> احذف ذاك المتغيّر، ثم <b>+ New Variable</b>:</p>
+<pre>الاسم  :  DATABASE_URL
+القيمة :  ${{ Postgres.DATABASE_URL }}</pre>
+<p>خانتان منفصلتان: الاسم على اليسار والقيمة على اليمين. المرجع يدخل في
+<b>القيمة</b> وحدها.</p>
+<p>وللتأكّد بعدها: اضغط أيقونة العين 👁 جنب <code>DATABASE_URL</code>. لازم
+تظهر لك جملة اتصال حقيقية تبدأ بـ <code>postgresql://</code>. لو ظهر لك نصّ
+المرجع كما هو، فاسم خدمة قاعدة البيانات داخل الأقواس لا يطابق اسمها عندك.</p>
+</div>""",
+
     "DATABASE_URL": """<div class="c"><h2>كيف تربط قاعدة البيانات</h2>
 <p class="lede">إضافة Postgres للمشروع لا تصله بالتطبيق تلقائيًا — لا بد من ربط صريح.
 هذي أشيع خطوة تُنسى في أول نشر.</p>
