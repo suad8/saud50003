@@ -43,6 +43,7 @@ from typing import Literal, Optional
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from . import phones
 from .clock import RIYADH, now_riyadh
 from .models import Stay, StayDevice
 
@@ -151,6 +152,7 @@ def open_stay(db: Session, tenant_id: int, room: str, *, guest_name: str = "",
         room=room,
         guest_name=guest_name,
         phone_last4=_last4(phone),
+        phone_norm=phones.normalize(phone),
         stay_code=new_stay_code() if mode == "stay_code" else "",
         expires_at=default_expiry(checkout_on),
         armed_until=now_riyadh() + ARM_WINDOW if mode == "desk_arm" else None,
@@ -158,6 +160,65 @@ def open_stay(db: Session, tenant_id: int, room: str, *, guest_name: str = "",
     db.add(stay)
     db.flush()
     return stay
+
+
+def stays_for_phone(db: Session, tenant_id: int, phone: str,
+                    at: Optional[datetime] = None) -> list[Stay]:
+    """الإقامات المفتوحة المطابقة لهذا الجوال. قد تكون أكثر من واحدة.
+
+    عائلة تحجز جناحين برقم واحد حالةٌ عادية لا استثناء. فنرجع القائمة ويقرّر
+    النداء ماذا يفعل — إرجاع الأولى صامتًا يضع النزيل في غرفة غير غرفته.
+    """
+    wanted = phones.normalize(phone)
+    if not wanted:
+        return []
+    at = _aware(at or now_riyadh())
+    rows = db.scalars(
+        select(Stay).where(Stay.tenant_id == tenant_id,
+                           Stay.phone_norm == wanted,
+                           Stay.status == "open")
+    ).all()
+    return [stay for stay in rows if is_active(stay, at)]
+
+
+def enter_by_phone(db: Session, tenant_id: int, phone: str, *,
+                   device_token: str = "", room: str = "", language: str = "",
+                   at: Optional[datetime] = None) -> Access:
+    """دخول من الرابط الموحّد: الجوال يحدّد الإقامة، والإقامة تحدّد الغرفة.
+
+    لا توقيع ولا ملصق لكل غرفة — الغرفة تُستنتج من الحجز لا من الرابط. وهذا
+    وحده يحلّ حالةً كانت تكسر الملصقات: نزيل نُقل إلى غرفة أخرى.
+    """
+    at = _aware(at or now_riyadh())
+    matches = stays_for_phone(db, tenant_id, phone, at)
+
+    if not matches:
+        return Access(granted=False, reason="no_active_stay")
+
+    if len(matches) > 1:
+        # رقم واحد على عدّة غرف: نسأل عن الغرفة بدل أن نخمّن. والسؤال هنا لا
+        # يكشف شيئًا — من يملك الرقم يملك الغرف كلها أصلًا.
+        if not room:
+            return Access(granted=False, challenge="room", reason="room_required")
+        matches = [s for s in matches if s.room == room.strip()]
+        if not matches:
+            return Access(granted=False, challenge="room", reason="room_wrong")
+
+    stay = matches[0]
+
+    device = _device_of(stay, device_token)
+    if device is not None:
+        device.last_seen_at = at
+        if language:
+            device.language = language
+        db.flush()
+        return Access(granted=True, stay=stay)
+
+    live = [d for d in stay.devices if d.revoked_at is None]
+    if len(live) >= MAX_DEVICES:
+        return Access(granted=False, stay=stay, reason="device_limit")
+
+    return _bind(db, stay, language=language)
 
 
 def close_stay(db: Session, stay: Stay, *, by: str = "desk") -> None:
@@ -261,6 +322,42 @@ def enter(db: Session, tenant_id: int, room: str, *, mode: Mode = "stay_code",
         return Access(granted=False, stay=stay, challenge=mode, reason="proof_wrong")
 
     return _bind(db, stay, language=language)
+
+
+def check_device(db: Session, tenant_id: int, device_token: str,
+                 at: Optional[datetime] = None) -> Access:
+    """الفحص عند كل رسالة حين لا تحمل الرابطُ الغرفةَ.
+
+    الرابط الموحّد لا يقول أي غرفة، فالجهاز هو ما يحدّد الإقامة. ونبحث عن
+    الجهاز داخل مستأجر بعينه لا في الجدول كله: رمز جهاز من فندق لا يفتح
+    بابًا في فندق آخر مهما كان الرمز صحيحًا.
+    """
+    at = _aware(at or now_riyadh())
+    if not device_token:
+        return Access(granted=False, reason="device_revoked")
+
+    wanted = _digest(device_token)
+    device = db.scalar(
+        select(StayDevice)
+        .join(Stay, StayDevice.stay_id == Stay.id)
+        .where(Stay.tenant_id == tenant_id,
+               StayDevice.token_hash == wanted,
+               StayDevice.revoked_at.is_(None))
+    )
+    if device is None:
+        return Access(granted=False, reason="device_revoked")
+
+    stay = db.get(Stay, device.stay_id)
+    if stay is None or stay.status != "open" or not is_active(stay, at):
+        # الإقامة انتهت والجهاز باقٍ: نبطله الآن لا عند أول كنس مجدول.
+        if device.revoked_at is None:
+            device.revoked_at = at
+            db.flush()
+        return Access(granted=False, reason="no_active_stay")
+
+    device.last_seen_at = at
+    db.flush()
+    return Access(granted=True, stay=stay)
 
 
 def check(db: Session, tenant_id: int, room: str, device_token: str,

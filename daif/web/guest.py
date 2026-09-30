@@ -1,11 +1,16 @@
-"""صفحة النزيل — من مسح الملصق إلى المحادثة.
+"""صفحة النزيل — من الرابط الموحّد إلى المحادثة.
 
-المسار كله عام: لا تسجيل دخول، ولا تطبيق، ولا رقم جوال يُكتب. النزيل يمسح
-الملصق فيفتح المتصفح، يختار لغته، يثبت أنه في الغرفة مرة واحدة، ثم يتكلم.
+رابط واحد للفندق كله: ملصق واحد يُطبع بلا تغيير، ولا توقيع لكل غرفة، ولا
+إعادة طباعة حين تتغيّر الأرقام. النزيل يفتحه، يختار لغته، يكتب جواله، فيُعرف
+من الحجز — والغرفة تُستنتج من الإقامة لا من الرابط. ولهذا وحده يعمل نزيلٌ
+نُقل إلى غرفة أخرى، وكان الملصق يكسر معه.
 
 المبدأ الحاكم هنا مختلف عن بقية الموقع: **كل طلب يُعامَل كأنه من غريب.**
 الكوكي وحده ليس إذنًا — يُفحص مقابل إقامة مفتوحة في كل مرة، لأن المغادرة تقع
 في منتصف المحادثة لا بين الجلسات.
+
+ورقم الغرفة لا يُعرض للنزيل. هو يعرف غرفته، والمستفيد الوحيد من عرضها من
+كتب رقم جوال غيره — والرقم ليس سرًّا. فحُذف العرض، وشُدّد حدّ المحاولات.
 """
 
 from __future__ import annotations
@@ -19,16 +24,16 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .. import degraded, roomqr, stay as stays
+from .. import degraded, phones, stay as stays
 from ..assistant import Assistant
 from ..clock import now_riyadh
 from ..db import get_session
 from ..models import Guest, Message, Tenant
-from ..ratelimit import GUEST_ENTER, GUEST_SEND, RateLimiter
+from ..ratelimit import GUEST_DOOR_IP, GUEST_DOOR_PHONE, GUEST_SEND, RateLimiter
 from ..repository import get_or_create_guest, load_knowledge_base
 from ..service import handle_inbound
 
-# اسم الكوكي يحمل الغرفة، فجهاز واحد يقدر يفتح غرفتين (المطوّف وعائلته) بلا
+# اسم الكوكي يحمل الفندق، فجهاز واحد يقدر يفتح فندقين (المطوّف يتنقّل) بلا
 # أن تدهس إحداهما الأخرى.
 COOKIE = "daif_stay"
 
@@ -42,21 +47,21 @@ LANGUAGES = [
 _LANG_CODES = {code for code, _ in LANGUAGES}
 
 # نصوص الواجهة. تُترجم عبر i18n لاحقًا؛ ما يظهر هنا هو الهيكل لا المحتوى.
-PROOF_LABEL = {
-    "stay_code": "اكتب رمز الإقامة المطبوع على ظرف بطاقة غرفتك",
-    "phone_last4": "اكتب آخر أربعة أرقام من جوالك المسجّل عند الوصول",
-    "desk_arm": "اطلب من الاستقبال تفعيل غرفتك، ثم امسح الكود مرة ثانية",
-}
+PHONE_LABEL = "اكتب رقم جوالك المسجّل عند الوصول"
+ROOM_LABEL = "رقمك مسجّل على أكثر من غرفة — اكتب رقم غرفتك"
+
 DENY_TEXT = {
-    "no_active_stay": "ما فيه إقامة مفتوحة على هذي الغرفة. لو وصلت للتو، "
-                      "الاستقبال بيفعّلها لك.",
-    "device_limit": "عدد الأجهزة المسموح بها لهذي الغرفة اكتمل. الاستقبال "
+    # رسالة واحدة لحالتي «الرقم غلط» و«ما فيه إقامة»: التفريق بينهما يقول
+    # لمن يجرّب أرقامًا إن هذا الرقم نازلٌ هنا، وهي المعلومة التي لا نعطيها.
+    "no_active_stay": "ما لقينا إقامة مفتوحة بهذا الرقم. تأكد من الرقم كما "
+                      "سجّلته عند الوصول، أو اسأل الاستقبال.",
+    "device_limit": "عدد الأجهزة المسموح بها لهذي الإقامة اكتمل. الاستقبال "
                     "يقدر يضيف جهازك.",
-    "proof_wrong": "الرمز ما ضبط. تأكد منه أو اسأل الاستقبال.",
-    "window_closed": "انتهت مهلة التفعيل. اطلب من الاستقبال يفعّلها من جديد.",
-    "not_configured": "هذي الغرفة محتاجة تفعيل من الاستقبال.",
-    "device_revoked": "انتهت جلستك. لو ما زلت نازلًا، امسح الكود مرة ثانية.",
+    "room_required": ROOM_LABEL,
+    "room_wrong": "رقم الغرفة ما ضبط مع هذا الجوال.",
+    "device_revoked": "انتهت جلستك. لو ما زلت نازلًا، افتح الرابط من جديد.",
     "rate_limited": "محاولات كثيرة. انتظر شوي وجرّب مرة ثانية.",
+    "bad_phone": "الرقم ما بان صحيح. اكتبه بالأرقام، مثال: 0501234567",
 }
 
 
@@ -65,42 +70,29 @@ class Visit:
     """ما يعرفه الخادم عن هذا الطلب قبل أن يقرر شيئًا."""
 
     tenant: Tenant
-    room: str
-    signature: str
 
     @property
     def path(self) -> str:
-        return f"/g/{self.tenant.slug}/{self.room}/{self.signature}"
+        return f"/h/{self.tenant.slug}"
 
 
-def _cookie_name(room: str) -> str:
-    safe = "".join(ch for ch in room if ch.isalnum())
+def _cookie_name(slug: str) -> str:
+    safe = "".join(ch for ch in slug if ch.isalnum())
     return f"{COOKIE}_{safe}"
 
 
-def _client_key(request: Request, room: str) -> str:
+def _client_key(request: Request, scope: str) -> str:
     client = request.client.host if request.client else "?"
-    return f"{client}:{room}"
+    return f"{client}:{scope}"
 
 
 def setup(templates) -> APIRouter:
     router = APIRouter(tags=["guest"])
     assistant = Assistant()
 
-    def _visit(slug: str, room: str, sig: str, db: Session) -> Optional[Visit]:
-        """يُرفض الرابط الملفّق قبل لمس قاعدة بيانات الإقامات.
-
-        ترتيب مقصود: التوقيع أولًا وهو حساب محلي رخيص، ثم الفندق. فمن يجرّب
-        أرقام غرف عشوائية لا يحمّل قاعدة البيانات شيئًا.
-        """
+    def _visit(slug: str, db: Session) -> Optional[Visit]:
         tenant = db.scalar(select(Tenant).where(Tenant.slug == slug))
-        if tenant is None or not roomqr.verify(slug, room, sig):
-            return None
-        return Visit(tenant=tenant, room=room, signature=sig)
-
-    def _mode(tenant: Tenant) -> str:
-        mode = getattr(tenant, "access_mode", "") or "stay_code"
-        return mode if mode in stays.MODES else "stay_code"
+        return Visit(tenant=tenant) if tenant is not None else None
 
     def _page(request: Request, name: str, ctx: dict) -> HTMLResponse:
         ctx.setdefault("languages", LANGUAGES)
@@ -108,58 +100,57 @@ def setup(templates) -> APIRouter:
 
     # ---------- المسح: اختيار اللغة ثم الإثبات ----------
 
-    @router.get("/g/{slug}/{room}/{sig}", response_class=HTMLResponse)
-    def landing(request: Request, slug: str, room: str, sig: str,
-                db: Session = Depends(get_session)):
-        visit = _visit(slug, room, sig, db)
+    @router.get("/h/{slug}", response_class=HTMLResponse)
+    def door(request: Request, slug: str, db: Session = Depends(get_session)):
+        visit = _visit(slug, db)
         if visit is None:
-            return _page(request, "guest_gone.html",
-                         {"reason": "هذا الكود مو صحيح."}, )
+            return _page(request, "guest_gone.html", {"reason": "هذا الرابط مو صحيح."})
 
-        token = request.cookies.get(_cookie_name(room), "")
-        access = stays.check(db, visit.tenant.id, room, token) if token else None
-        if access is not None and access.granted:
+        token = request.cookies.get(_cookie_name(slug), "")
+        if token and stays.check_device(db, visit.tenant.id, token).granted:
             db.commit()
             return RedirectResponse(visit.path + "/chat", status_code=303)
-
-        mode = _mode(visit.tenant)
+        db.commit()
         return _page(request, "guest_enter.html", {
-            "visit": visit, "hotel": visit.tenant, "room": room,
-            "mode": mode, "prompt": PROOF_LABEL[mode],
-            "needs_input": mode != "desk_arm",
-            "error": "",
+            "visit": visit, "hotel": visit.tenant, "prompt": PHONE_LABEL,
+            "error": "", "needs_room": False, "phone": "",
         })
 
-    @router.post("/g/{slug}/{room}/{sig}/enter")
-    def enter(request: Request, slug: str, room: str, sig: str,
-              language: str = Form("ar"), proof: str = Form(""),
+    @router.post("/h/{slug}/enter")
+    def enter(request: Request, slug: str, phone: str = Form(""),
+              room: str = Form(""), language: str = Form("ar"),
               db: Session = Depends(get_session)):
-        visit = _visit(slug, room, sig, db)
+        visit = _visit(slug, db)
         if visit is None:
-            return _page(request, "guest_gone.html", {"reason": "هذا الكود مو صحيح."})
+            return _page(request, "guest_gone.html", {"reason": "هذا الرابط مو صحيح."})
 
-        mode = _mode(visit.tenant)
         if language not in _LANG_CODES:
             language = "ar"
 
-        def refuse(reason: str):
+        def refuse(reason: str, *, needs_room: bool = False):
             return _page(request, "guest_enter.html", {
-                "visit": visit, "hotel": visit.tenant, "room": room,
-                "mode": mode, "prompt": PROOF_LABEL[mode],
-                "needs_input": mode != "desk_arm",
+                "visit": visit, "hotel": visit.tenant,
+                "prompt": ROOM_LABEL if needs_room else PHONE_LABEL,
                 "error": DENY_TEXT.get(reason, "ما قدرنا نفتح الجلسة."),
-                "language": language,
+                "needs_room": needs_room, "phone": phone, "language": language,
             })
 
-        if not _limiter.hit(_client_key(request, room), GUEST_ENTER):
+        # حدّان معًا: على المصدر وعلى الرقم المطلوب. الأول يوقف من يجرّب
+        # أرقامًا كثيرة، والثاني يوقف من يجرّب رقمًا واحدًا من مصادر كثيرة.
+        normalized = phones.normalize(phone)
+        if not _limiter.hit(_client_key(request, f"door:{slug}"), GUEST_DOOR_IP):
             return refuse("rate_limited")
+        if normalized and not _limiter.hit(f"phone:{slug}:{normalized}", GUEST_DOOR_PHONE):
+            return refuse("rate_limited")
+        if not normalized:
+            return refuse("bad_phone")
 
-        access = stays.enter(db, visit.tenant.id, room, mode=mode,
-                             device_token=request.cookies.get(_cookie_name(room), ""),
-                             proof=proof, language=language)
+        access = stays.enter_by_phone(
+            db, visit.tenant.id, phone, room=room, language=language,
+            device_token=request.cookies.get(_cookie_name(slug), ""))
         if not access.granted:
             db.commit()
-            return refuse(access.reason)
+            return refuse(access.reason, needs_room=access.challenge == "room")
 
         db.commit()
         response = RedirectResponse(visit.path + "/chat", status_code=303)
@@ -167,22 +158,19 @@ def setup(templates) -> APIRouter:
             # الكوكي هو المفتاح: على الجهاز، غير مقروء من جافاسكربت، ولا يُرسل
             # مع طلبات مواقع أخرى، ويموت مع الإقامة لا بعدها.
             response.set_cookie(
-                _cookie_name(room), access.token,
-                max_age=14 * 24 * 3600, httponly=True, samesite="lax",
-                secure=request.url.scheme == "https", path=f"/g/{slug}/{room}",
-            )
-        response.set_cookie("daif_lang", language, max_age=14 * 24 * 3600,
-                            samesite="lax", path=f"/g/{slug}/{room}")
+                _cookie_name(slug), access.token, httponly=True, samesite="lax",
+                secure=request.url.scheme == "https", path=f"/h/{slug}",
+                max_age=int(stays.CHECKOUT_GRACE.total_seconds()) + 7 * 86400)
+        response.set_cookie("daif_lang", language, max_age=7 * 86400,
+                            samesite="lax", path=f"/h/{slug}")
         return response
-
-    # ---------- المحادثة ----------
 
     def _guard(request: Request, visit: Visit, db: Session):
         """الفحص الذي يسبق كل شيء في هذه الصفحة."""
-        token = request.cookies.get(_cookie_name(visit.room), "")
+        token = request.cookies.get(_cookie_name(visit.tenant.slug), "")
         if not token:
-            return None, "no_active_stay"
-        access = stays.check(db, visit.tenant.id, visit.room, token)
+            return None, "device_revoked"
+        access = stays.check_device(db, visit.tenant.id, token)
         return (access.stay, "") if access.granted else (None, access.reason)
 
     def _guest_of(db: Session, tenant_id: int, stay) -> Guest:
@@ -198,12 +186,11 @@ def setup(templates) -> APIRouter:
             guest.name = stay.guest_name
         return guest
 
-    @router.get("/g/{slug}/{room}/{sig}/chat", response_class=HTMLResponse)
-    def chat(request: Request, slug: str, room: str, sig: str,
-             db: Session = Depends(get_session)):
-        visit = _visit(slug, room, sig, db)
+    @router.get("/h/{slug}/chat", response_class=HTMLResponse)
+    def chat(request: Request, slug: str, db: Session = Depends(get_session)):
+        visit = _visit(slug, db)
         if visit is None:
-            return _page(request, "guest_gone.html", {"reason": "هذا الكود مو صحيح."})
+            return _page(request, "guest_gone.html", {"reason": "هذا الرابط مو صحيح."})
 
         stay, reason = _guard(request, visit, db)
         if stay is None:
@@ -219,17 +206,18 @@ def setup(templates) -> APIRouter:
             .order_by(Message.created_at)
         ).all()
         db.commit()
+        # لا "room" في السياق: رقم الغرفة لا يُعرض للنزيل. هو يعرف غرفته،
+        # والمستفيد الوحيد من عرضها من كتب رقم جوال غيره.
         return _page(request, "guest_chat.html", {
-            "visit": visit, "hotel": visit.tenant, "room": room, "stay": stay,
+            "visit": visit, "hotel": visit.tenant, "stay": stay,
             "messages": history, "shortcuts": shortcuts_for(visit.tenant),
             "language": request.cookies.get("daif_lang", "ar"),
         })
 
-    @router.post("/g/{slug}/{room}/{sig}/send")
-    def send(request: Request, slug: str, room: str, sig: str,
-             text: str = Form(""), shortcut: str = Form(""),
-             db: Session = Depends(get_session)):
-        visit = _visit(slug, room, sig, db)
+    @router.post("/h/{slug}/send")
+    def send(request: Request, slug: str, text: str = Form(""),
+             shortcut: str = Form(""), db: Session = Depends(get_session)):
+        visit = _visit(slug, db)
         if visit is None:
             return JSONResponse({"error": "bad_code"}, status_code=404)
 
@@ -244,7 +232,7 @@ def setup(templates) -> APIRouter:
             return JSONResponse({"error": "empty"}, status_code=400)
         if len(text) > 1000:
             text = text[:1000]
-        if not _limiter.hit(_client_key(request, room), GUEST_SEND):
+        if not _limiter.hit(_client_key(request, f"send:{slug}"), GUEST_SEND):
             return JSONResponse({"error": "rate_limited",
                                  "text": DENY_TEXT["rate_limited"]}, status_code=429)
 
@@ -276,15 +264,15 @@ def setup(templates) -> APIRouter:
              "ticket": bool(outcome.tickets)},
         ]})
 
-    @router.get("/g/{slug}/{room}/{sig}/poll")
-    def poll(request: Request, slug: str, room: str, sig: str, after: int = 0,
+    @router.get("/h/{slug}/poll")
+    def poll(request: Request, slug: str, after: int = 0,
              db: Session = Depends(get_session)):
         """ردود الاستقبال تصل هنا.
 
         النزيل قد يغلق التبويب فلا يرى الرد. هذا الحد المعروف لقناة الويب،
         وعلاجه طبقة الإشعارات لا هذا المسار.
         """
-        visit = _visit(slug, room, sig, db)
+        visit = _visit(slug, db)
         if visit is None:
             return JSONResponse({"error": "bad_code"}, status_code=404)
         stay, reason = _guard(request, visit, db)

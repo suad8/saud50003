@@ -404,6 +404,8 @@ class Stay(Base):
     __tablename__ = "stays"
     __table_args__ = (
         Index("ix_stay_tenant_room_status", "tenant_id", "room", "status"),
+        # البحث بالجوال هو مسار الدخول الوحيد الآن — فهرسه لا رفاهية.
+        Index("ix_stay_tenant_phone_status", "tenant_id", "phone_norm", "status"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -413,6 +415,9 @@ class Stay(Base):
     # آخر أربعة أرقام من جوال النزيل كما سُجّلت عند الوصول. تُستخدم للتحقق
     # في وضع الملصق الثابت، ولا يُخزَّن الرقم كاملًا هنا.
     phone_last4: Mapped[str] = mapped_column(String(4), default="")
+    # الجوال بصورته القانونية (أرقام ورمز دولة، بلا + ولا فواصل). هو مفتاح
+    # دخول النزيل من الرابط الموحّد، فالصورة الواحدة شرط لأن يُطابَق أصلًا.
+    phone_norm: Mapped[str] = mapped_column(String(20), default="", index=True)
     # رمز الإقامة في وضع «كود لكل إقامة» — يُطبع على ظرف بطاقة الغرفة.
     stay_code: Mapped[str] = mapped_column(String(16), default="", index=True)
 

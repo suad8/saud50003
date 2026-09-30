@@ -162,41 +162,47 @@ def test_a_hotel_cannot_touch_another_hotels_stay(client, hotel, db):
 
 # --- الملصقات ---------------------------------------------------------------
 
-def test_stickers_render_real_scannable_codes(client, hotel):
+def test_the_door_page_renders_one_code_for_the_whole_hotel(client, hotel):
+    """ملصق واحد بدل واحد لكل غرفة — وهذا كل المقصود من الرابط الموحّد."""
     login(client)
-    r = client.get("/stays/stickers?rooms=401-403")
+    r = client.get("/stays/door")
+
     assert r.status_code == 200
-    assert r.text.count("<svg") == 3
-    assert "غرفة 401" in r.text and "غرفة 403" in r.text
+    assert r.text.count('class="qr"') == 1, "أكثر من رمز على صفحة الملصق الموحّد"
+    assert "/h/taibah" in r.text
 
 
-def test_the_printed_sticker_opens_the_guest_door(client, hotel, db):
-    """أهم اختبار في الصفحة: الرابط الذي يحمله الملصق يفتح صفحة النزيل فعلًا.
+def test_the_printed_code_opens_the_guest_door(client, hotel, db):
+    """أهم اختبار في الصفحة: الرابط الذي يحمله الرمز يفتح صفحة النزيل فعلًا.
 
-    الرابط لا يظهر كنصّ في الملصق — هو داخل وحدات الرمز. فنأخذه من نفس
-    الدالة التي تبني الملصق ونطرق به الباب.
+    الرابط لا يظهر داخل وحدات الرمز كنصّ نقرؤه، فنأخذه من نفس الدالة التي
+    تبني الصفحة ونطرق به الباب.
     """
     login(client)
-    assert client.get("/stays/stickers?rooms=402").status_code == 200
+    assert client.get("/stays/door").status_code == 200
 
-    url = roomqr.sheet("http://testserver", "taibah", ["402"])[0].url
-    stays.open_stay(db, hotel.id, "402", checkout_on=today() + timedelta(days=2))
+    stays.open_stay(db, hotel.id, "402", phone="0501234567",
+                    checkout_on=today() + timedelta(days=2))
     db.commit()
 
+    url = roomqr.hotel_url("http://testserver", "taibah")
     landing = client.get(url.replace("http://testserver", ""))
     assert landing.status_code == 200
-    assert "رمز الإقامة" in landing.text      # صفحة اللغة والإثبات، لا رفض
+    assert 'name="phone"' in landing.text     # باب الجوال، لا رفض
 
 
-def test_a_sticker_for_another_hotel_does_not_open_this_one(client, hotel, db):
+def test_the_link_of_one_hotel_does_not_open_another(client, hotel, db):
+    """الفصل بين الفنادق لم يعد من التوقيع بل من الإقامة نفسها."""
     login(client)
-    stays.open_stay(db, hotel.id, "402", checkout_on=today() + timedelta(days=2))
+    stays.open_stay(db, hotel.id, "402", phone="0501234567",
+                    checkout_on=today() + timedelta(days=2))
     db.commit()
-    theirs = roomqr.sticker_path("anwar", "402")          # نفس الغرفة، فندق آخر
-    assert "مو صحيح" in client.get(theirs.replace("/anwar/", "/taibah/")).text
+
+    # نفس الجوال ونفس الغرفة، لكن على باب فندق لا وجود له.
+    assert "مو صحيح" in client.get("/h/anwar").text
 
 
-def test_desk_cannot_print_stickers(client, hotel):
-    """الطباعة إعداد لا تشغيل — موظف الاستقبال لا يصدر أكواد غرف."""
+def test_desk_cannot_print_the_door_code(client, hotel):
+    """الطباعة إعداد لا تشغيل — موظف الاستقبال لا يطبع ملصق الفندق."""
     login(client, "desk@taibah.sa")
-    assert client.get("/stays/stickers?rooms=402").status_code == 403
+    assert client.get("/stays/door").status_code == 403

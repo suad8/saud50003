@@ -11,7 +11,7 @@
       </div>
     </div>
     <nav class="row">
-      <a href="#pricing" class="btn ghost sm">الأسعار</a>
+      {% if show_billing %}<a href="#pricing" class="btn ghost sm">الأسعار</a>{% endif %}
       <a href="/login" class="btn primary sm">دخول الفنادق</a>
     </nav>
   </header>
@@ -24,7 +24,8 @@
       لتصريح الروضة لأي شي طبي — المساعد يرفضه ويحوّله لموظف.
     </p>
     <div class="row" style="justify-content:center; margin-top:22px">
-      <a href="#pricing" class="btn primary">الباقات والأسعار</a>
+      {% if show_billing %}<a href="#pricing" class="btn primary">الباقات والأسعار</a>
+      {% else %}<a href="/login" class="btn primary">دخول الفنادق</a>{% endif %}
       <a href="#how" class="btn">كيف يعمل</a>
     </div>
     <div class="lp-proof">
@@ -93,6 +94,7 @@
     </ol>
   </section>
 
+  {% if show_billing %}
   <section id="pricing" class="lp-section">
     <h2>الأسعار</h2>
     <p class="lead" style="margin-bottom:26px">
@@ -122,10 +124,11 @@
       تجاوز الحصة ينحسب بالفاتورة وما يوقّف المساعد
     </p>
   </section>
+  {% endif %}
 
   <section class="lp-cta">
     <h2>ابدأ بفندق واحد</h2>
-    <p>نجهّز لك قاعدة معرفتك معك، وتجرّبه أسبوعين قبل أي التزام.</p>
+    <p>نجهّز لك قاعدة معرفتك معك، ونمشي معك من أول غرفة.</p>
     <a href="/login" class="btn primary">دخول الفنادق</a>
   </section>
 

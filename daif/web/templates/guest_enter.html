@@ -1,6 +1,6 @@
 {% extends "guest_base.html" %}
-{% block title %}غرفة {{ room }} · {{ hotel.name }}{% endblock %}
-{% block subtitle %}غرفة {{ room }}{% endblock %}
+{% block title %}{{ hotel.name }}{% endblock %}
+{% block subtitle %}خدمة النزلاء{% endblock %}
 {% block style %}
   .langs{display:grid; grid-template-columns:repeat(auto-fill,minmax(102px,1fr)); gap:8px; margin:4px 0 20px}
   .lang{padding:12px 8px; text-align:center; border-radius:12px; border:1px solid var(--line);
@@ -8,12 +8,12 @@
   .lang[aria-pressed="true"]{background:var(--brand); border-color:var(--brand); color:#fff}
   .field{margin-bottom:16px}
   .go{width:100%; margin-top:4px}
-  .code-in{text-align:center; letter-spacing:.32em; font-size:1.3rem; font-weight:700; text-transform:uppercase}
+  .phone-in{font-size:1.15rem; font-weight:600; letter-spacing:.06em; direction:ltr; text-align:left}
 {% endblock %}
 {% block body %}
 <main class="card">
   <h2 style="margin:0 0 4px; font-size:1.1rem">أهلًا بك</h2>
-  <p class="muted" style="margin:0 0 16px">اختر لغتك، ونجاوبك على طول.</p>
+  <p class="muted" style="margin:0 0 16px">اختر لغتك واكتب جوالك، ونجاوبك على طول.</p>
 
   {% if error %}<div class="err" role="alert">{{ error }}</div>{% endif %}
 
@@ -27,16 +27,25 @@
       {% endfor %}
     </div>
 
-    {% if needs_input %}
     <div class="field">
-      <label for="proof">{{ prompt }}</label>
-      <input id="proof" name="proof" required autocomplete="one-time-code"
-             {% if mode == 'phone_last4' %}inputmode="numeric" pattern="[0-9]*" maxlength="10"
-             {% else %}class="code-in" maxlength="8" autocapitalize="characters"{% endif %}>
+      <label for="phone">{% if needs_room %}رقم جوالك{% else %}{{ prompt }}{% endif %}</label>
+      {# inputmode=tel يفتح لوحة الأرقام على الجوال — وهذي أكثر شاشة تُملأ في النظام كله. #}
+      <input id="phone" name="phone" class="phone-in" required
+             inputmode="tel" autocomplete="tel" maxlength="20"
+             placeholder="05XXXXXXXX" value="{{ phone|default('') }}">
+      {% if not needs_room %}
       <p class="muted" style="margin:9px 0 0">نسألك مرة وحدة بس. بعدها يفتح على طول.</p>
+      {% endif %}
     </div>
-    {% else %}
-    <p class="muted" style="margin:0 0 16px">{{ prompt }}</p>
+
+    {% if needs_room %}
+    {# رقمك على أكثر من غرفة (عائلة أو مجموعة). السؤال هنا لا يكشف شيئًا:
+       من يملك الرقم يملك الغرف كلها أصلًا. #}
+    <div class="field">
+      <label for="room">{{ prompt }}</label>
+      <input id="room" name="room" required inputmode="numeric"
+             pattern="[0-9A-Za-z-]*" maxlength="16" autofocus>
+    </div>
     {% endif %}
 
     <button class="btn p go" type="submit">ابدأ</button>

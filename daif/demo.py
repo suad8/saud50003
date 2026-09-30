@@ -133,13 +133,15 @@ def seed(session, *, hotel: str = DEFAULT_HOTEL, slug: str = DEFAULT_SLUG,
         ))
 
     today = now_riyadh().date()
+    # أرقام يسهل كتابتها في العرض: الجوال هو مفتاح الدخول الآن، فالمجرِّب
+    # يحتاج رقمًا يتذكّره لا رمزًا يبحث عنه.
     codes: list[tuple[str, str]] = []
-    for room, name, phone in [("402", "أحمد الغامدي", "966500000001"),
-                              ("318", "محمد أسلم", "923000000002"),
-                              ("215", "Siti Rahayu", "628100000003")]:
-        st = stay_mod.open_stay(session, tenant.id, room, guest_name=name,
-                                phone=phone, checkout_on=today + timedelta(days=3))
-        codes.append((room, st.stay_code))
+    for room, name, phone in [("402", "أحمد الغامدي", "0500000001"),
+                              ("318", "محمد أسلم", "0500000002"),
+                              ("215", "Siti Rahayu", "0500000003")]:
+        stay_mod.open_stay(session, tenant.id, room, guest_name=name,
+                           phone=phone, checkout_on=today + timedelta(days=3))
+        codes.append((room, phone))
 
     enable(session, platform_email=platform_email, staff_email=staff_email,
            password=password, hotel=hotel)

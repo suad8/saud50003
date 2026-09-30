@@ -23,7 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
-from .. import apikeys, authz, secrets_store
+from .. import apikeys, authz, features, secrets_store
 from ..assistant import Assistant
 from ..clock import now_riyadh, parse_date
 from ..config import get_settings
@@ -80,6 +80,9 @@ logger = logging.getLogger("daif.web")
 
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+# مفتاح عام لكل القوالب: يُقرأ عند كل عرض لا مرة واحدة عند الإقلاع، فقلبه
+# يسري بلا إعادة تشغيل.
+templates.env.globals["show_billing"] = features.SHOW_BILLING_FLAG
 
 # اعتمادية CSRF تُطبَّق على كل المسارات؛ تتجاهل الآمنة منها والـwebhook.
 app = FastAPI(
@@ -887,28 +890,26 @@ def stay_revoke_device(
     return RedirectResponse("/stays?ok=1", status_code=303)
 
 
-@app.get("/stays/stickers", response_class=HTMLResponse)
-def stickers_page(
+@app.get("/stays/door", response_class=HTMLResponse)
+def door_page(
     request: Request,
-    rooms: str = Query(default=""),
     session: Session = Depends(get_session),
     principal: Principal | None = Depends(current_principal),
 ) -> Response:
-    """ورقة ملصقات جاهزة للطباعة — تُطبع مرة عند التركيب.
+    """ملصق واحد للفندق كله — يُطبع مرة ولا يتغيّر بعدها أبدًا.
 
-    الطباعة إعداد لا تشغيل، فهي للمدير. وتغيير سرّ الفندق يُبطل كل ما طُبع
-    ويفرض إعادة الطباعة، وهذا هو المقصود.
+    كان هنا ملصق موقَّع لكل غرفة: تسعون رمزًا مختلفًا، وإعادة طباعة عند كل
+    تغيير في الأرقام، وملصق يكسر مع نزيل نُقل. الرابط الموحّد يلغي هذا كله،
+    لأن الغرفة تُستنتج من الحجز لا من الرابط.
     """
     if principal is None:
         return _login_redirect()
     _require(principal, authz.WRITE_SETTINGS)
 
-    wanted = _room_list(rooms) or hotel_rooms(session, principal.tenant.id)
-    base = str(request.base_url).rstrip("/")
-    sheet = roomqr.sheet(base, principal.tenant.slug, wanted)
-    return _template(request, "stickers.html", {
-        "t": principal.t, "tenant": principal.tenant, "stickers": sheet,
-        "rooms_raw": rooms, "count": len(sheet), "page": "stays",
+    url = roomqr.hotel_url(str(request.base_url), principal.tenant.slug)
+    return _template(request, "door.html", {
+        "t": principal.t, "tenant": principal.tenant, "page": "stays",
+        "url": url, "qr": roomqr.qr_svg(url, scale=8),
         "can": lambda permission: authz.can(principal.user.role, permission),
     })
 
@@ -1076,6 +1077,10 @@ def billing_page(
     session: Session = Depends(get_session),
     principal: Principal | None = Depends(current_principal),
 ) -> Response:
+    # مطويّة مؤقتًا. نخفي المسار كما نخفي الرابط: إخفاء الرابط وحده يترك
+    # البابَ مفتوحًا لمن يكتب العنوان، فيرى ما قرّرنا ألّا يُرى بعد.
+    if not features.billing_visible():
+        raise HTTPException(status_code=404)
     if principal is None:
         return _login_redirect()
     tenant = principal.tenant

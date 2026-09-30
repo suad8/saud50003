@@ -103,9 +103,13 @@ def _fresh_rate_limits():
     منفردًا ويفشل ضمن المجموعة. وهو فشل لا علاقة له بما يقيسه الاختبار.
     """
     from daif.ratelimit import limiter
+    from daif.web.guest import _limiter as guest_limiter
 
-    with limiter._lock:
-        limiter._hits.clear()
+    # صفحة النزيل تحمل مُحدِّدها الخاص. نسيانه كان يجعل ملفًا كاملًا يخنق
+    # نفسه: كل اختبار ينجح منفردًا، والمجموعة تسقط.
+    for one in (limiter, guest_limiter):
+        with one._lock:
+            one._hits.clear()
     yield
 
 

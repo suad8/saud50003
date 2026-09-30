@@ -8,7 +8,7 @@
   <a class="btn sm {{ 'primary' if show == 'open' }}" href="/stays">المفتوحة</a>
   <a class="btn sm {{ 'primary' if show == 'all' }}" href="/stays?show=all">الكل</a>
   {% if can('write.settings') %}
-  <a class="btn sm" href="/stays/stickers">طباعة ملصقات الغرف</a>
+  <a class="btn sm" href="/stays/door">ملصق الفندق</a>
   {% endif %}
 </div>
 {% endblock %}

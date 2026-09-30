@@ -48,20 +48,25 @@ def test_the_encryption_key_is_never_stored(db):
     assert "DAIF_SECRET_KEY" not in secrets_store.MANAGED.values()
 
 
-def test_room_codes_sign_with_no_configuration(db):
+def test_the_hotel_link_needs_no_configuration(db):
+    """الرابط الموحّد لا يحمل سرًّا، فلا شيء يُضبط قبل طباعته.
+
+    كان هنا توقيعٌ لكل غرفة مشتقٌّ من سرّ الفندق، وتغييره يُبطل كل ما طُبع.
+    زال الاثنان: الرابط ثابت، والإثبات انتقل إلى جوال النزيل.
+    """
     from daif import roomqr
 
-    sig = roomqr.sign("taibah", "402")
-    assert sig and roomqr.verify("taibah", "402", sig)
-    assert not roomqr.verify("taibah", "403", sig)
+    assert roomqr.hotel_path("taibah") == "/h/taibah"
+    assert roomqr.hotel_url("https://daif.sa/", "taibah") == "https://daif.sa/h/taibah"
 
 
-def test_room_codes_survive_a_restart(db):
+def test_the_printed_code_survives_a_restart(db):
     from daif import roomqr
 
-    sig = roomqr.sign("taibah", "402")
+    before = roomqr.qr_svg(roomqr.hotel_url("https://daif.sa", "taibah"))
     secrets_store.reset_cache()
-    assert roomqr.verify("taibah", "402", sig), "الملصقات المطبوعة بطلت بعد إعادة التشغيل"
+    after = roomqr.qr_svg(roomqr.hotel_url("https://daif.sa", "taibah"))
+    assert before == after, "الملصق المطبوع بطل بعد إعادة التشغيل"
 
 
 # --- وضع العرض ---------------------------------------------------------------

@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}ملصق الفندق{% endblock %}
+{% block style %}
+  .door{max-width:560px; margin:0 auto; text-align:center}
+  .door .qr{background:#fff; padding:18px; border-radius:16px; display:inline-block;
+    border:1px solid var(--line); line-height:0}
+  .door .qr svg{width:260px; height:260px; display:block}
+  .door .link{direction:ltr; font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    font-size:.95rem; word-break:break-all; margin:16px 0 4px}
+  .steps{text-align:start; margin:22px auto 0; max-width:420px; line-height:1.85}
+  .steps li{margin-bottom:6px}
+  @media print{
+    .no-print, nav, header, footer{display:none !important}
+    .door .qr svg{width:420px; height:420px}
+    body{background:#fff}
+  }
+{% endblock %}
+{% block body %}
+<div class="door">
+  <h1 style="margin:0 0 6px">ملصق الفندق</h1>
+  <p class="muted no-print" style="margin:0 0 20px">
+    واحد لكل الغرف. اطبعه والصقه في كل غرفة وفي المصعد والاستقبال —
+    ما يتغيّر ولو تغيّرت أرقام الغرف.
+  </p>
+
+  <div class="qr">{{ qr|safe }}</div>
+  <p class="link">{{ url }}</p>
+
+  <ol class="steps">
+    <li>النزيل يصوّر الرمز.</li>
+    <li>يختار لغته ويكتب رقم جواله.</li>
+    <li>يفتح الشات على طول — بلا تطبيق ولا تسجيل.</li>
+  </ol>
+
+  <p class="muted no-print" style="margin-top:20px">
+    يشتغل لأن الجوال مسجّل عند الوصول. أي نزيل ما ينفتح له، تأكد أن جواله
+    مكتوب في إقامته من <a href="/stays">صفحة الإقامات</a>.
+  </p>
+
+  <p class="no-print" style="margin-top:18px">
+    <button class="btn p" type="button" onclick="window.print()">اطبع</button>
+    <a class="btn sm" href="/stays">رجوع للإقامات</a>
+  </p>
+</div>
+{% endblock %}
