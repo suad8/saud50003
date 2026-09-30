@@ -86,6 +86,7 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 templates.env.globals["show_billing"] = features.SHOW_BILLING_FLAG
 # يُقرأ عند كل عرض: ضبط المفتاح يزيل الإنذار بلا إعادة تشغيل.
 templates.env.globals["model_key_set"] = features._Flag(assistant_mod.model_key_set)
+templates.env.globals["show_model_notice"] = features.MODEL_KEY_NOTICE_FLAG
 
 # اعتمادية CSRF تُطبَّق على كل المسارات؛ تتجاهل الآمنة منها والـwebhook.
 app = FastAPI(
@@ -746,6 +747,10 @@ def conversations_page(
     if principal is None:
         return _login_redirect()
     guests = list_guests(session, principal.tenant.id)
+    # بلا اختيار: نفتح أحدث محادثة بدل لوحٍ فارغ. الشاشة الفارغة تُقرأ كعطل،
+    # والموظف يفتح هذي الصفحة ليقرأ آخر ما دار لا ليختار من قائمة.
+    if guest is None and guests:
+        guest = guests[0].id
     selected = None
     messages: list = []
     if guest is not None:

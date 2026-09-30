@@ -200,4 +200,23 @@ def seed(session, *, hotel: str = DEFAULT_HOTEL, slug: str = DEFAULT_SLUG,
         note="شكوى — المساعد لا يجيب عنها ويحوّلها فورًا",
         created_at=now - timedelta(minutes=6)))
 
+    # فجوات معرفة: أسئلة سألها نزلاء ولم تجد حقيقة تغطيها. شاشة «الفجوات»
+    # تعرضها مرتّبة بالتكرار، وهي أوضح ما يقنع صاحب الفندق: النظام يقول له
+    # ما ينقص قاعدة معرفته بدل أن ينتظر منه أن يخمّنه. وكانت تُعرض فارغة.
+    for question, times in [("فيه صيدلية قريبة من الفندق؟", 4),
+                            ("عندكم كوي ملابس سريع؟", 3),
+                            ("متى يفتح السوق اللي جنب الحرم؟", 2),
+                            ("فيه كراسي أطفال في المطعم؟", 1)]:
+        for turn in range(times):
+            asker = Guest(tenant_id=tenant.id, wa_id=f"gap:{abs(hash(question)) % 9999}:{turn}",
+                          room="", language="ar")
+            session.add(asker)
+            session.flush()
+            session.add(HandoffRecord(
+                tenant_id=tenant.id, guest_id=asker.id,
+                reason="no_documented_answer", to="desk", guest_text=question,
+                note="لا حقيقة موثّقة تغطي السؤال", status="resolved",
+                resolved_by=staff_email,
+                created_at=now - timedelta(hours=turn * 5 + 2)))
+
     return Seeded(platform_email, staff_email, password, codes)

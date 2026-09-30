@@ -30,6 +30,17 @@ def billing_visible() -> bool:
     return _flag("DAIF_SHOW_BILLING", SHOW_BILLING)
 
 
+# تنبيه «المساعد يعمل جزئيًا» مطويّ: العرض الحالي على أصحاب الفنادق، وشريط
+# أصفر على كل شاشة يقرؤه الزائر كعطل في المنتج لا كنقصٍ في إعداد نسخة عرض.
+# النقص حقيقي ويستحق الإعلان على نشرٍ يعمل، فيُقلَب عندها بسطر واحد.
+SHOW_MODEL_KEY_NOTICE = False
+
+
+def model_key_notice_visible() -> bool:
+    """هل يُعرض تنبيه غياب مفتاح النموذج في اللوحة؟"""
+    return _flag("DAIF_SHOW_MODEL_NOTICE", SHOW_MODEL_KEY_NOTICE)
+
+
 class _Flag:
     """مفتاح يُقرأ عند كل استعمال، ويصحّ بصورتيه في القوالب.
 
@@ -53,3 +64,4 @@ class _Flag:
 
 
 SHOW_BILLING_FLAG = _Flag(billing_visible)
+MODEL_KEY_NOTICE_FLAG = _Flag(model_key_notice_visible)

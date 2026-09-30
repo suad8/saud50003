@@ -90,19 +90,32 @@ def client(db):
     app_module.app.dependency_overrides.clear()
 
 
-def test_the_dashboard_announces_it_on_every_screen(client):
-    """نقصٌ صامت: النظام يعمل ويبدو تامًّا. فلا يُترك ليُكتشف من شكوى."""
+def test_the_notice_is_folded_away_by_default(client):
+    """العرض على أصحاب الفنادق: شريط أصفر يُقرأ كعطل في المنتج."""
+    from daif import features
+
+    assert features.model_key_notice_visible() is False
+    assert "المساعد يعمل جزئيًا" not in client.get("/").text
+
+
+def test_one_switch_brings_the_notice_back(client, monkeypatch):
+    """النقص حقيقي ويستحق الإعلان على نشرٍ يعمل — فالطيّ بمفتاح لا بحذف."""
+    monkeypatch.setenv("DAIF_SHOW_MODEL_NOTICE", "1")
+
     for path in ("/", "/tickets", "/stays"):
         assert "المساعد يعمل جزئيًا" in client.get(path).text, path
 
 
-def test_setting_the_key_clears_it_without_a_restart(client, monkeypatch):
+def test_the_restored_notice_still_disappears_once_the_key_is_set(client, monkeypatch):
+    monkeypatch.setenv("DAIF_SHOW_MODEL_NOTICE", "1")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-real")
     assert "المساعد يعمل جزئيًا" not in client.get("/").text
 
 
-def test_the_notice_does_not_overstate_the_damage(client):
+def test_the_notice_does_not_overstate_the_damage(client, monkeypatch):
     """قاعدة المعرفة تجيب بلا مفتاح، فقول «كل سؤال يتحوّل» يُفزع بلا سبب."""
+    monkeypatch.setenv("DAIF_SHOW_MODEL_NOTICE", "1")
+
     body = client.get("/").text
     assert "كل سؤال يتحوّل" not in body
     assert "قاعدة معرفتك" in body

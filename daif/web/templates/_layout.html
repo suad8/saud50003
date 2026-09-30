@@ -62,7 +62,7 @@
       {% if self.subtitle() | trim %}<div class="sub">{% block subtitle %}{% endblock %}</div>{% endif %}
     </header>
     <div class="content">
-      {% if not model_key_set %}
+      {% if show_model_notice and not model_key_set %}
       {# بلا مفتاح النموذج يعمل كل شيء ويبدو سليمًا — إلا أن المساعد لا يجيب
          عن شيء ويحوّل كل سؤال لموظف. عطلٌ صامت يُكتشف من شكوى نزيل بعد
          أسبوع، فيُعلَن هنا على كل شاشة حتى يُضبط. #}
