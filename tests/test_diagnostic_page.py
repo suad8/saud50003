@@ -284,3 +284,21 @@ def test_the_length_is_always_reported(monkeypatch, no_database_env):
     problems = [p for p in preflight.check(production=True)
                 if p.key == "DATABASE_URL" and p.fatal]
     assert "طولها 9 محرفًا" in problems[0].detail
+
+
+def test_the_specific_fix_wins_over_the_generic_one(monkeypatch, no_database_env, tmp_path):
+    """فشل الترحيلات يسبق DATABASE_URL في القائمة وهو نتيجته لا سببه.
+
+    فكان يُعرض الشرح العام «أضف المتغيّرات المعلَّمة بـ ✕» بينما شرح ربط
+    قاعدة البيانات موجود وجاهز.
+    """
+    err = tmp_path / "startup-error"
+    err.write_text("فشل تطبيق ترحيلات قاعدة البيانات.", encoding="utf-8")
+    monkeypatch.setenv("STARTUP_ERROR_FILE", str(err))
+    monkeypatch.setenv("DATABASE_URL", "PGDATA=/x\nPOSTGRES_DB=railway")
+
+    problems = preflight.check(production=True)
+    assert [p.key for p in problems if p.fatal][0] == "قاعدة البيانات"
+
+    html = preflight.diagnostic_html(problems)
+    assert "كيف تربط قاعدة البيانات" in html, "عُرض الشرح العام بدل المفيد"

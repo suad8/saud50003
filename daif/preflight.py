@@ -240,12 +240,17 @@ def diagnostic_html(problems: list[Problem]) -> str:
             else "الخادم يعمل، ومعه ملاحظات")
     # مرجع في خانة الاسم يسبق كل شرح آخر: هو سبب غياب قاعدة البيانات، وشرحُ
     # «كيف تربطها» وحده يقود الناشر لإعادة نفس الخطأ حرفيًا.
-    if any(p.key == "خانة الاسم" for p in problems):
-        fix = FIXES["خانة الاسم"]
-    elif fatal:
-        fix = FIXES.get(fatal[0].key, DEFAULT_FIX)
+    # أوّل قاتل ليس بالضرورة أنفعهم شرحًا: فشل الترحيلات يسبق DATABASE_URL
+    # في القائمة، وهو نتيجته لا سببه — فكان يُعرض الشرح العام بينما الشرح
+    # المفيد موجود. نختار أخصّ شرح متاح، لا أوّل قاتل.
+    fix = ""
+    for key in ("خانة الاسم", "DATABASE_URL"):
+        if any(p.key == key for p in problems) and key in FIXES:
+            fix = FIXES[key]
+            break
     else:
-        fix = ""
+        if fatal:
+            fix = next((FIXES[p.key] for p in fatal if p.key in FIXES), DEFAULT_FIX)
 
     return f"""<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
