@@ -82,7 +82,13 @@
               {% if m.confidence is not none %}<span class="chip">{{ (m.confidence * 100) | round | int }}%</span>{% endif %}
               {% if m.degraded %}<span class="chip" style="color:var(--red)">{{ t('degraded') }}</span>{% endif %}
             </div>
-            {% if m.violations %}<div class="cell-sub" style="color:var(--amber); margin-top:5px">{{ t('violations') }}: {{ m.violations }}</div>{% endif %}
+            {% set note = violation_note(m.violations) %}
+            {% if note %}
+            {# مختصرًا وبلا لون إنذار: ملاحظة للموظف لا تحذير. والنصّ الكامل
+               لا يُعرض هنا ولا في تلميح: مكانه المحاكي والسجلّات — وهما
+               للتشخيص، وهذي الشاشة للردّ على نزيل. #}
+            <div class="cell-sub muted" style="margin-top:5px">{{ note }}</div>
+            {% endif %}
             {% endif %}
           </div>
           <span class="muted" style="font-size:.72rem; white-space:nowrap; padding-top:9px">{{ m.created_at.strftime('%m-%d %H:%M') }}</span>
