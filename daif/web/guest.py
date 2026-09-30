@@ -24,14 +24,13 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .. import degraded, phones, stay as stays
+from .. import local_answer, phones, stay as stays
 from ..assistant import Assistant
 from ..clock import now_riyadh
 from ..db import get_session
-from ..models import Guest, Message, Stay, Tenant
+from ..models import Guest, HandoffRecord, Message, Stay, Tenant, Ticket
 from ..ratelimit import GUEST_DOOR_IP, GUEST_DOOR_PHONE, GUEST_SEND, RateLimiter
 from ..repository import get_or_create_guest, load_knowledge_base
-from ..service import handle_inbound
 
 # اسم الكوكي يحمل الفندق، فجهاز واحد يقدر يفتح فندقين (المطوّف يتنقّل) بلا
 # أن تدهس إحداهما الأخرى.
@@ -39,11 +38,9 @@ COOKIE = "daif_stay"
 
 _limiter = RateLimiter()
 
-LANGUAGES = [
-    ("ar", "العربية"), ("en", "English"), ("ur", "اردو"), ("id", "Indonesia"),
-    ("tr", "Türkçe"), ("bn", "বাংলা"), ("fa", "فارسی"), ("fr", "Français"),
-    ("ms", "Melayu"), ("ha", "Hausa"),
-]
+# لغتان لا عشر. عشرة أزرار تملأ الشاشة قبل أن يصل النزيل إلى خانة جواله،
+# وحقائق الفندق مكتوبة بالعربية فما عداها يحتاج ترجمة لا نعد بها.
+LANGUAGES = [("ar", "العربية"), ("en", "English")]
 _LANG_CODES = {code for code, _ in LANGUAGES}
 
 # نصوص الواجهة. تُترجم عبر i18n لاحقًا؛ ما يظهر هنا هو الهيكل لا المحتوى.
@@ -63,6 +60,10 @@ DENY_TEXT = {
     "rate_limited": "محاولات كثيرة. انتظر شوي وجرّب مرة ثانية.",
     "bad_phone": "الرقم ما بان صحيح. اكتبه بالأرقام، مثال: 0501234567",
 }
+
+# ما يُقال للنزيل حين يكتب سؤالًا بيده. لا وعد بوقت — الوعد الذي يُخلَف
+# أسوأ من لا وعد، والاستقبال قد يكون مشغولًا.
+TO_DESK = "وصل سؤالك للاستقبال، وبيردّون عليك هنا."
 
 
 @dataclass(frozen=True)
@@ -97,6 +98,21 @@ def setup(templates) -> APIRouter:
     def _page(request: Request, name: str, ctx: dict) -> HTMLResponse:
         ctx.setdefault("languages", LANGUAGES)
         return templates.TemplateResponse(request, name, ctx)
+
+    def _shortcut_answer(db: Session, tenant: Tenant, shortcut: str,
+                         language: str) -> str:
+        """جواب زرّ الاختصار من قاعدة المعرفة. فراغٌ إن لم تغطّه حقيقة ظاهرة.
+
+        والفراغ يعني الذهاب للموظف — فحقيقة حجبها الموسم أو انتهت صلاحيتها
+        لا يُخترع لها بديل.
+        """
+        question = SHORTCUT_QUESTION.get(shortcut, "")
+        if not question:
+            return ""
+        kb = load_knowledge_base(db, tenant.id)
+        found = local_answer.answer(question, kb.active(now_riyadh(), tenant.season),
+                                    language="ar")
+        return found.text if found else ""
 
     def _demo_phone(db: Session, tenant: Tenant) -> str:
         """جوال إقامة مفتوحة، في وضع العرض وحده.
@@ -279,29 +295,47 @@ def setup(templates) -> APIRouter:
         guest = _guest_of(db, visit.tenant.id, stay)
         lang = request.cookies.get("daif_lang", "") or guest.language
         guest.language = lang
-        outcome = handle_inbound(db, visit.tenant, wa_id=guest.wa_id, text=text,
-                                 assistant=assistant)
-        if outcome is None:
+
+        inbound = Message(tenant_id=visit.tenant.id, guest_id=guest.id,
+                          direction="in", text=text, language=lang)
+        db.add(inbound)
+        db.flush()
+
+        # الاختصار جوابه من قاعدة المعرفة مباشرة. أما ما يكتبه النزيل بيده
+        # فيذهب للموظف كما هو — لا يُخمَّن له جواب ولا يُعاد صياغته. السؤال
+        # المكتوب قد يكون شكوى أو طلبًا أو ظرفًا خاصًّا، وإنسانٌ يقرؤه أصدق
+        # من أي مطابقة، والفندق يبقى صاحب كل كلمة تصل نزيله.
+        answer = _shortcut_answer(db, visit.tenant, shortcut, lang) if shortcut else ""
+
+        if answer:
+            outbound = Message(tenant_id=visit.tenant.id, guest_id=guest.id,
+                               direction="out", text=answer, language=lang,
+                               intent="inquiry", in_scope=True, confidence=1.0)
+            db.add(outbound)
+            db.flush()
             db.commit()
-            return JSONResponse({"messages": []})
+            return JSONResponse({"messages": [
+                {"dir": "in", "text": text, "at": _hhmm(inbound.created_at)},
+                {"dir": "out", "text": answer, "at": _hhmm(outbound.created_at)},
+            ]})
 
-        reply = outcome.reply_text
-        # النموذج سقط والسؤال من الأسئلة المعروفة: نقتبس الحقيقة الموثّقة
-        # حرفيًا بدل أن نكدّس ثمانية أسئلة شائعة على الاستقبال.
-        if outcome.result.degraded and shortcut:
-            quote = degraded.quote_for(
-                shortcut, load_knowledge_base(db, visit.tenant.id).facts, lang)
-            if quote is not None:
-                reply = quote.text
-                outcome.outbound.text = reply
-                outcome.outbound.intent = "degraded_quote"
-
+        outbound = Message(tenant_id=visit.tenant.id, guest_id=guest.id,
+                           direction="out", text=TO_DESK, language=lang,
+                           intent="handoff", in_scope=False, confidence=1.0)
+        db.add(outbound)
+        db.flush()
+        db.add(HandoffRecord(
+            tenant_id=visit.tenant.id, guest_id=guest.id, message_id=outbound.id,
+            reason="guest_question", to="front_desk", guest_text=text,
+            note=f"سؤال مكتوب من غرفة {stay.room}"))
+        db.add(Ticket(
+            tenant_id=visit.tenant.id, guest_id=guest.id, message_id=outbound.id,
+            type="استفسار", room=stay.room, detail=text, urgency="normal"))
         db.commit()
         return JSONResponse({"messages": [
-            {"dir": "in", "text": text, "at": _hhmm(outcome.inbound.created_at)},
-            {"dir": "out", "text": reply,
-             "at": _hhmm(outcome.outbound.created_at),
-             "ticket": bool(outcome.tickets)},
+            {"dir": "in", "text": text, "at": _hhmm(inbound.created_at)},
+            {"dir": "out", "text": TO_DESK, "at": _hhmm(outbound.created_at),
+             "ticket": True},
         ]})
 
     @router.get("/h/{slug}/poll")
@@ -341,9 +375,12 @@ def _hhmm(moment) -> str:
     return moment.strftime("%H:%M") if moment else now_riyadh().strftime("%H:%M")
 
 
-# أسئلة الضغطة الواحدة. الجواب لا يُكتب هنا — يُطلب من نفس المحرّك، فيمرّ على
-# كل الحواجز ويتغيّر مع الموسم والوقت وحالة الحقيقة. زر ثابت بجواب مكتوب
-# سلفًا هو بالضبط ما يجعل النظام يكذب بعد أول تعديل في قاعدة المعرفة.
+# أسئلة الضغطة الواحدة. الجواب لا يُكتب هنا — يُطلب من قاعدة المعرفة عند كل
+# ضغطة، فيتغيّر مع الموسم والوقت وصلاحية الحقيقة. زر ثابت بجواب مكتوب سلفًا
+# هو بالضبط ما يجعل النظام يكذب بعد أول تعديل في قاعدة المعرفة.
+#
+# ومنها ما هو طلب خدمة لا سؤال — مناشف، تنظيف، مكالمة الاستقبال. هذي لا
+# يُقتبس لها جواب: تذهب للموظف وتفتح تذكرة، وهو ما يريده النزيل منها أصلًا.
 DEFAULT_SHORTCUTS = [
     ("wifi", "🛜", "كلمة سر الواي فاي", "وش كلمة سر الواي فاي؟"),
     ("breakfast", "🍽️", "وقت الإفطار", "متى الإفطار ووين؟"),
@@ -354,6 +391,9 @@ DEFAULT_SHORTCUTS = [
     ("laundry", "👕", "الغسيل", "كيف أرسل ملابسي للغسيل؟"),
     ("desk", "🛎️", "أكلّم الاستقبال", "أبغى أكلم الاستقبال"),
 ]
+
+
+SHORTCUT_QUESTION = {key: text for key, _icon, _label, text in DEFAULT_SHORTCUTS}
 
 
 def shortcuts_for(tenant: Tenant) -> list[dict]:

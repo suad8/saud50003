@@ -31,9 +31,9 @@
         ('settings',      '/settings',      'nav_settings',      0,                 'view.settings'),
       ] %}
       {% for key, href, label, count, permission in items if can(permission) %}
-      <a href="{{ href }}" class="{{ 'active' if page == key }}">
+      <a href="{{ href }}" class="{{ 'active' if page == key }}" data-nav="{{ key }}">
         {{ icon(key) }}<span>{{ t(label) }}</span>
-        {%- if count %}<span class="badge-count">{{ count }}</span>{% endif -%}
+        <span class="badge-count"{% if not count %} hidden{% endif %}>{{ count or '' }}</span>
       </a>
       {% endfor %}
     </nav>

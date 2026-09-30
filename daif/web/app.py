@@ -18,7 +18,12 @@ from fastapi import (
     Request,
     Response,
 )
-from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import (
+    HTMLResponse,
+    JSONResponse,
+    PlainTextResponse,
+    RedirectResponse,
+)
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
@@ -646,6 +651,33 @@ def guest_update(
 # ---------------------------------------------------------------------------
 # التذاكر والتحويلات
 # ---------------------------------------------------------------------------
+
+@app.get("/pulse")
+def pulse(
+    session: Session = Depends(get_session),
+    principal: Principal | None = Depends(current_principal),
+) -> Response:
+    """عدّادات ما ينتظر الاستقبال. تُستطلع من اللوحة لتنبيه الموظف.
+
+    كانت اللوحة ساكنة: تذكرة جديدة لا تظهر حتى يحدّث الموظف الصفحة بنفسه —
+    ونزيلٌ ينتظر ردًّا لا يعرف أن أحدًا لم يره بعد.
+    """
+    if principal is None:
+        return JSONResponse({"error": "unauthorised"}, status_code=401)
+    from sqlalchemy import func, select
+
+    def count(model, **where) -> int:
+        query = select(func.count(model.id)).where(
+            model.tenant_id == principal.tenant.id)
+        for field, value in where.items():
+            query = query.where(getattr(model, field) == value)
+        return int(session.scalar(query) or 0)
+
+    return JSONResponse({
+        "tickets": count(Ticket, status="open"),
+        "handoffs": count(HandoffRecord, status="open"),
+    })
+
 
 @app.get("/tickets", response_class=HTMLResponse)
 def tickets_page(
