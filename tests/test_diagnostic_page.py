@@ -198,3 +198,44 @@ def test_the_page_never_prints_the_value_of_a_misplaced_variable(
 
     html = preflight.diagnostic_html(preflight.check(production=True))
     assert "SUPERSECRET" not in html
+
+
+# --- قيمة موجودة لا تصلح عنوانًا ---
+
+
+def test_an_unresolved_reference_as_the_value_is_caught(monkeypatch, no_database_env):
+    """المنصّة لم تحلّ المرجع فحُفظ نصًّا. بلا هذا يصل الناشر لأثر تتبّع."""
+    monkeypatch.setenv("DATABASE_URL", "${{ Postgres.DATABASE_URL }}")
+
+    problems = [p for p in preflight.check(production=True)
+                if p.key == "DATABASE_URL" and p.fatal]
+    assert problems, "قيمة لا تُقرأ مرّت كأنها سليمة"
+    assert "مسافات" in problems[0].detail
+
+
+def test_a_value_sqlalchemy_cannot_parse_is_caught(monkeypatch, no_database_env):
+    monkeypatch.setenv("DATABASE_URL", "this is not a url at all")
+
+    problems = [p for p in preflight.check(production=True)
+                if p.key == "DATABASE_URL" and p.fatal]
+    assert problems
+    assert "postgresql://" in problems[0].detail
+
+
+def test_a_real_postgres_url_passes(monkeypatch, no_database_env):
+    """لا إنذار كاذب على العنوان الذي تحقنه المنصّة فعلًا."""
+    monkeypatch.setenv(
+        "DATABASE_URL",
+        "postgresql://postgres:s3cr3t@postgres.railway.internal:5432/railway")
+
+    assert not [p for p in preflight.check(production=True)
+                if p.key == "DATABASE_URL"]
+
+
+def test_the_fix_text_shows_the_reference_without_spaces(monkeypatch, no_database_env):
+    """نصّ الإصلاح نفسه كان يعرضها بمسافات — وهي سبب العطل."""
+    monkeypatch.setenv("DATABASE_URL", "${{ Postgres.DATABASE_URL }}")
+
+    html = preflight.diagnostic_html(preflight.check(production=True))
+    assert "${{Postgres.DATABASE_URL}}" in html
+    assert "${{ Postgres.DATABASE_URL }}" not in html

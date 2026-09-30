@@ -60,6 +60,17 @@ def misplaced_references() -> list[str]:
     )
 
 
+def _parses_as_url(url: str) -> bool:
+    """هل يقرأ SQLAlchemy هذا عنوانًا؟ نسأله هو لا نخمّن بتعبير نمطي."""
+    try:
+        from sqlalchemy.engine.url import make_url
+
+        make_url(url)
+    except Exception:
+        return False
+    return True
+
+
 def check(*, production: bool | None = None) -> list[Problem]:
     production = is_production() if production is None else production
     found: list[Problem] = []
@@ -113,6 +124,29 @@ def check(*, production: bool | None = None) -> list[Problem]:
         ))
 
     url = discovered_database_url()
+
+    # عنوان موجود لكنه لا يُقرأ: أشيع سببه مرجع منصّة لم يُحلّ، فتُحفظ قيمته
+    # نصًّا كما كُتبت. بلا هذا الفحص يصل الناشر إلى أثر تتبّع من SQLAlchemy
+    # داخل ترحيلات ألمبك — صحيح ولا يدلّ على المتغيّر ولا على إصلاحه.
+    if url and not url.startswith("sqlite"):
+        unresolved = any(marker in url for marker in REFERENCE_MARKERS)
+        if unresolved:
+            found.append(Problem(
+                "DATABASE_URL",
+                "قيمته نصّ مرجع لم تحلّه المنصّة، فلا يصلح عنوانًا. غالبًا "
+                "لوجود مسافات داخل القوسين أو علامات اقتباس حوله: اكتبه "
+                "ملتصقًا بلا مسافات ولا اقتباس.",
+                fatal=True,
+            ))
+        elif not _parses_as_url(url):
+            found.append(Problem(
+                "DATABASE_URL",
+                "قيمته موجودة لكن SQLAlchemy لا يقرؤها عنوانًا. الشكل "
+                "المتوقَّع: postgresql://مستخدم:كلمة@مضيف:5432/قاعدة — "
+                "وتأكّد أن لا اقتباس ولا سطر جديد في القيمة.",
+                fatal=True,
+            ))
+
     if production and (not url or url.startswith("sqlite")):
         names = "، ".join(PG_URL_ENV_NAMES)
         found.append(Problem(
@@ -232,7 +266,8 @@ FIXES = {
 صار هناك متغيّر باسم <code>DATABASE_URL</code> يقرؤه التطبيق.</p>
 <p><b>الصح:</b> احذف ذاك المتغيّر، ثم <b>+ New Variable</b>:</p>
 <pre>الاسم  :  DATABASE_URL
-القيمة :  ${{ Postgres.DATABASE_URL }}</pre>
+القيمة :  ${{Postgres.DATABASE_URL}}</pre>
+<p>بلا مسافات داخل القوسين وبلا علامات اقتباس — المسافة تمنع المنصّة من حلّ المرجع فتُحفظ القيمة نصًّا كما كُتبت.</p>
 <p>خانتان منفصلتان: الاسم على اليسار والقيمة على اليمين. المرجع يدخل في
 <b>القيمة</b> وحدها.</p>
 <p>وللتأكّد بعدها: اضغط أيقونة العين 👁 جنب <code>DATABASE_URL</code>. لازم
@@ -245,7 +280,8 @@ FIXES = {
 هذي أشيع خطوة تُنسى في أول نشر.</p>
 <p class="lede" style="margin-top:12px"><b>في Railway:</b> افتح خدمة التطبيق ←
 <b>Variables</b> ← <b>+ New Variable</b> ← اسمه <code>DATABASE_URL</code> وقيمته:</p>
-<pre>${{ Postgres.DATABASE_URL }}</pre>
+<pre>${{Postgres.DATABASE_URL}}</pre>
+<p><b>ملتصقة بلا مسافات داخل القوسين، وبلا علامات اقتباس.</b> المسافة تمنع المنصّة من حلّ المرجع، فتُحفظ القيمة نصًّا فلا تصلح عنوانًا.</p>
 <p class="lede" style="margin-top:10px">(اسم <code>Postgres</code> هو اسم خدمة قاعدة
 البيانات عندك كما يظهر في اللوحة.) ثم أعد النشر.</p>
 <p class="note">أو للتجربة السريعة: احذف <code>DAIF_ENV</code> فيعمل على قاعدة محلية —
