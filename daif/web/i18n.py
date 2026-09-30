@@ -244,6 +244,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "in_scope_yes": "أُجيب",
         "in_scope_no": "حُوّل",
         "degraded": "وضع احتياطي",
+        "handed_off": "حُوِّل للاستقبال",
     },
     "en": {
         "search": "Search",
@@ -458,6 +459,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "in_scope_yes": "Answered",
         "in_scope_no": "Handed off",
         "degraded": "Fallback mode",
+        "handed_off": "Sent to front desk",
     },
     "ur": {
         "search": "تلاش",
@@ -672,6 +674,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "in_scope_yes": "جواب دیا",
         "in_scope_no": "منتقل",
         "degraded": "متبادل حالت",
+        "handed_off": "استقبال کو بھیجا گیا",
     },
     "id": {
         "search": "Cari",
@@ -886,6 +889,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "in_scope_yes": "Dijawab",
         "in_scope_no": "Dialihkan",
         "degraded": "Mode cadangan",
+        "handed_off": "Diteruskan ke resepsionis",
     },
     "tr": {
         "search": "Ara",
@@ -1100,6 +1104,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "in_scope_yes": "Yanıtlandı",
         "in_scope_no": "Aktarıldı",
         "degraded": "Yedek mod",
+        "handed_off": "Resepsiyona iletildi",
     },
     "bn": {
         "search": "খুঁজুন",
@@ -1314,6 +1319,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "in_scope_yes": "উত্তর দেওয়া",
         "in_scope_no": "স্থানান্তরিত",
         "degraded": "বিকল্প অবস্থা",
+        "handed_off": "রিসেপশনে পাঠানো হয়েছে",
     },
 }
 

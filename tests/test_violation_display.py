@@ -1,66 +1,28 @@
-"""ما يقرؤه موظف الاستقبال تحت الردّ — لا ما نسجّله للتشخيص.
+"""ما يظهر تحت ردّ المساعد في شاشة المحادثات — وما لا يظهر.
 
-رسالةُ استثناء بالإنجليزية تحت كل ردّ («MissingModelKey: …») تُقرأ كعطل في
-المنتج لا كملاحظة فنية، ويراها الموظف وهو يردّ على نزيل. النصّ الكامل يبقى
-مخزَّنًا — في السجلّات وفي المحاكي، وهو مكان التشخيص.
+هذي الشاشة يفتحها موظف الاستقبال ليقرأ ويردّ. وكانت تحمل تحت كل جملة خمس
+شارات — النطاق واللغة ونسبة الثقة والوضع وملاحظة الحواجز — فتقرأ كأداة
+تشخيص لا كمحادثة. و«100%» لا تعني شيئًا لمن يقرأ «سيتواصل معك الاستقبال»،
+و«MissingModelKey: أضف ANTHROPIC_API_KEY» تُقرأ كعطل في المنتج.
+
+بقيت شارة واحدة: المصدر. منه يعرف الموظف من أين جاء الجواب، وبه يصحّحه في
+قاعدة المعرفة إن كان ناقصًا. والتفصيل كلّه في المحاكي، وهو مكانه.
 """
 
 from __future__ import annotations
 
 import pytest
+from fastapi.testclient import TestClient
 
-from daif.web.violations import summarise
-
-
-@pytest.mark.parametrize("raw,expected", [
-    ("عطل في النموذج: MissingModelKey: مفتاح النموذج غير مضبوط. أضف "
-     "ANTHROPIC_API_KEY بقيمته في إعدادات الاستضافة ثم أعد النشر.",
-     "المساعد غير مفعّل"),
-    ("عطل في النموذج: AuthenticationError: 401", "المساعد غير مفعّل"),
-    ("عطل في النموذج: APITimeoutError: timed out", "المساعد تأخّر"),
-    ("عطل في النموذج: SomethingNew: x", "تعذّر تشغيل المساعد"),
-])
-def test_a_technical_failure_becomes_a_short_human_line(raw, expected):
-    assert summarise(raw) == expected
+from daif.db import get_session
+from daif.models import Guest, Message, StaffUser, Tenant
+from daif.security import hash_password
+from daif.web import app as app_module
 
 
-def test_no_english_and_no_variable_names_leak(raw="عطل في النموذج: MissingModelKey: "
-                                                    "أضف ANTHROPIC_API_KEY بقيمته"):
-    note = summarise(raw)
-    assert "ANTHROPIC_API_KEY" not in note
-    assert "MissingModelKey" not in note
-
-
-def test_content_guardrails_are_kept_they_are_the_useful_ones():
-    """ملاحظة عن مصدر ناقص تخصّ الجواب نفسه — وهي ما يفيد الموظف فعلًا."""
-    note = summarise("استشهاد بمعرّف غير موجود: wifi | جواب داخل النطاق بلا مصدر موثّق")
-
-    assert "استشهاد بمعرّف غير موجود" in note
-    assert "بلا مصدر موثّق" in note
-
-
-def test_the_same_note_twice_is_shown_once():
-    twice = "عطل في النموذج: MissingModelKey: x | عطل في النموذج: MissingModelKey: y"
-    assert summarise(twice) == "المساعد غير مفعّل"
-
-
-def test_a_very_long_note_is_trimmed():
-    assert len(summarise("م" * 500)) <= 71
-
-
-def test_nothing_to_say_shows_nothing():
-    assert summarise("") == "" and summarise(None) == ""
-
-
-def test_the_conversation_screen_shows_the_short_form(db):
-    """الاختبار الحقيقي: ما يظهر في الصفحة، لا ما ترجعه الدالة."""
-    from fastapi.testclient import TestClient
-
-    from daif.db import get_session
-    from daif.models import Guest, Message, StaffUser, Tenant
-    from daif.security import hash_password
-    from daif.web import app as app_module
-
+@pytest.fixture
+def screen(db):
+    """يبني محادثة ويعيد صفحتها كما يراها الموظف."""
     tenant = Tenant(slug="taibah", name="فندق طيبة")
     db.add(tenant)
     db.flush()
@@ -69,25 +31,56 @@ def test_the_conversation_screen_shows_the_short_form(db):
     guest = Guest(tenant_id=tenant.id, wa_id="web:1", room="402", language="ar")
     db.add(guest)
     db.flush()
-    db.add(Message(
-        tenant_id=tenant.id, guest_id=guest.id, direction="out",
-        text="سيتواصل معك الاستقبال.", language="ar", degraded=True,
-        violations="عطل في النموذج: MissingModelKey: أضف ANTHROPIC_API_KEY بقيمته"))
-    db.flush()
 
-    app_module.app.dependency_overrides[get_session] = lambda: db
-    try:
-        with TestClient(app_module.app) as client:
-            client.get("/login")
-            client.post("/login", data={"email": "owner@taibah.sa",
-                                        "password": "pw12345678",
-                                        "csrf_token": client.cookies.get("daif_csrf") or ""},
-                        follow_redirects=True)
-            body = client.get(f"/conversations?guest={guest.id}").text
-    finally:
-        app_module.app.dependency_overrides.clear()
+    def build(**fields):
+        db.add(Message(tenant_id=tenant.id, guest_id=guest.id, direction="out",
+                       language="ar", **fields))
+        db.flush()
+        app_module.app.dependency_overrides[get_session] = lambda: db
+        try:
+            with TestClient(app_module.app) as client:
+                client.get("/login")
+                client.post("/login",
+                            data={"email": "owner@taibah.sa", "password": "pw12345678",
+                                  "csrf_token": client.cookies.get("daif_csrf") or ""},
+                            follow_redirects=True)
+                return client.get(f"/conversations?guest={guest.id}").text
+        finally:
+            app_module.app.dependency_overrides.clear()
 
-    assert "المساعد غير مفعّل" in body
-    # ولا أثر للنصّ الخام في الصفحة أصلًا — ولا في تلميح يظهر بمرور الفأرة.
+    return build
+
+
+def test_no_exception_text_ever_reaches_the_screen(screen):
+    body = screen(
+        text="سيتواصل معك الاستقبال.", degraded=True,
+        violations="عطل في النموذج: MissingModelKey: أضف ANTHROPIC_API_KEY بقيمته")
+
     assert "MissingModelKey" not in body
     assert "ANTHROPIC_API_KEY" not in body
+    assert "عطل في النموذج" not in body
+
+
+def test_a_handoff_says_so_in_one_chip(screen):
+    body = screen(text="سيتواصل معك الاستقبال.", degraded=True, confidence=1.0)
+
+    assert "حُوِّل للاستقبال" in body
+    assert "100%" not in body, "نسبة الثقة لا تعني شيئًا لموظف استقبال"
+    assert "وضع احتياطي" not in body
+
+
+def test_an_answer_shows_where_it_came_from(screen):
+    """المصدر هو الشارة الوحيدة المفيدة: به يصحّح الموظف قاعدة المعرفة."""
+    body = screen(text="الواي فاي: Taibah-Guest", sources="K01", confidence=0.95)
+
+    assert "K01" in body
+    assert "95%" not in body
+
+
+def test_a_staff_reply_carries_no_machine_chips_at_all(screen):
+    """ردّ إنسان ليس له مصدر ولا ثقة ولا نطاق — وشاراتها عليه بلا معنى."""
+    body = screen(text="جاهز، بنوصّلها لك الحين.", sent_by="ريم · الاستقبال",
+                  confidence=1.0)
+
+    assert "جاهز، بنوصّلها لك الحين." in body
+    assert "حُوِّل للاستقبال" not in body

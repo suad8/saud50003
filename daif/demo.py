@@ -203,15 +203,18 @@ def seed(session, *, hotel: str = DEFAULT_HOTEL, slug: str = DEFAULT_SLUG,
     # فجوات معرفة: أسئلة سألها نزلاء ولم تجد حقيقة تغطيها. شاشة «الفجوات»
     # تعرضها مرتّبة بالتكرار، وهي أوضح ما يقنع صاحب الفندق: النظام يقول له
     # ما ينقص قاعدة معرفته بدل أن ينتظر منه أن يخمّنه. وكانت تُعرض فارغة.
-    for question, times in [("فيه صيدلية قريبة من الفندق؟", 4),
-                            ("عندكم كوي ملابس سريع؟", 3),
-                            ("متى يفتح السوق اللي جنب الحرم؟", 2),
-                            ("فيه كراسي أطفال في المطعم؟", 1)]:
+    # تُنسب لنزلاء موجودين لا لنزلاء يُخترعون لها: صفٌّ لكل تكرار كان يُغرق
+    # قائمة النزلاء بأسماء مثل «gap:8353:0» بلا غرفة، ويضخّم عدّادها.
+    askers = [complainant] + [g for g in session.scalars(
+        select(Guest).where(Guest.tenant_id == tenant.id)).all() if g is not complainant]
+    for index, (question, times) in enumerate([
+        ("فيه صيدلية قريبة من الفندق؟", 4),
+        ("عندكم كوي ملابس سريع؟", 3),
+        ("متى يفتح السوق اللي جنب الحرم؟", 2),
+        ("فيه كراسي أطفال في المطعم؟", 1),
+    ]):
         for turn in range(times):
-            asker = Guest(tenant_id=tenant.id, wa_id=f"gap:{abs(hash(question)) % 9999}:{turn}",
-                          room="", language="ar")
-            session.add(asker)
-            session.flush()
+            asker = askers[(index + turn) % len(askers)]
             session.add(HandoffRecord(
                 tenant_id=tenant.id, guest_id=asker.id,
                 reason="no_documented_answer", to="desk", guest_text=question,

@@ -25,7 +25,6 @@ from sqlalchemy.orm import Session
 
 from .. import apikeys, authz, features, secrets_store, tick
 from .. import assistant as assistant_mod
-from . import violations as violations_view
 from ..assistant import Assistant
 from ..clock import now_riyadh, parse_date
 from ..config import get_settings
@@ -88,7 +87,6 @@ templates.env.globals["show_billing"] = features.SHOW_BILLING_FLAG
 # يُقرأ عند كل عرض: ضبط المفتاح يزيل الإنذار بلا إعادة تشغيل.
 templates.env.globals["model_key_set"] = features._Flag(assistant_mod.model_key_set)
 templates.env.globals["show_model_notice"] = features.MODEL_KEY_NOTICE_FLAG
-templates.env.globals["violation_note"] = violations_view.summarise
 
 # اعتمادية CSRF تُطبَّق على كل المسارات؛ تتجاهل الآمنة منها والـwebhook.
 app = FastAPI(

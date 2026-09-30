@@ -73,22 +73,19 @@
         <div class="row" style="align-items:flex-start; {{ 'flex-direction:row-reverse' if m.direction == 'out' }}">
           <div class="bubble {{ m.direction }}">
             {{ m.text }}
-            {% if m.direction == 'out' %}
+            {# شارة واحدة على الأكثر. خمسٌ تحت كل جملة — النطاق واللغة والثقة
+               والوضع والملاحظة — تجعل الشاشة أداة تشخيص لا محادثة، ولا يعني
+               «100%» شيئًا لموظف استقبال يقرأ «سيتواصل معك الاستقبال».
+               التفصيل كلّه في المحاكي، وهو المكان المخصّص له.
+
+               ويبقى المصدر: منه يعرف الموظف من أين جاء الجواب، وبه يصحّحه
+               في قاعدة المعرفة إن كان ناقصًا. وهو الشارة الوحيدة التي تُستعمل. #}
+            {% if m.direction == 'out' and not m.sent_by %}
             <div class="chips" style="margin-top:7px">
-              {% if m.in_scope %}<span class="chip">{{ t('in_scope_yes') }}</span>
-              {% else %}<span class="chip">{{ t('in_scope_no') }}</span>{% endif %}
-              {% if m.language %}<span class="chip">{{ m.language }}</span>{% endif %}
-              {% if m.sources %}<span class="chip mono">{{ m.sources }}</span>{% endif %}
-              {% if m.confidence is not none %}<span class="chip">{{ (m.confidence * 100) | round | int }}%</span>{% endif %}
-              {% if m.degraded %}<span class="chip" style="color:var(--red)">{{ t('degraded') }}</span>{% endif %}
+              {% if m.sources %}<span class="chip mono">{{ m.sources }}</span>
+              {% elif m.degraded or m.intent == 'handoff' %}
+              <span class="chip">{{ t('handed_off') }}</span>{% endif %}
             </div>
-            {% set note = violation_note(m.violations) %}
-            {% if note %}
-            {# مختصرًا وبلا لون إنذار: ملاحظة للموظف لا تحذير. والنصّ الكامل
-               لا يُعرض هنا ولا في تلميح: مكانه المحاكي والسجلّات — وهما
-               للتشخيص، وهذي الشاشة للردّ على نزيل. #}
-            <div class="cell-sub muted" style="margin-top:5px">{{ note }}</div>
-            {% endif %}
             {% endif %}
           </div>
           <span class="muted" style="font-size:.72rem; white-space:nowrap; padding-top:9px">{{ m.created_at.strftime('%m-%d %H:%M') }}</span>
