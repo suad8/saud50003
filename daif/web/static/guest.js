@@ -19,6 +19,16 @@
     });
   }
 
+  // --- رقم التجربة في وضع العرض ---
+  var demoNum = document.querySelector(".demo-num");
+  var phoneField = document.getElementById("phone");
+  if (demoNum && phoneField) {
+    demoNum.addEventListener("click", function () {
+      phoneField.value = demoNum.dataset.phone;
+      phoneField.focus();
+    });
+  }
+
   // --- المحادثة ---
   var chat = document.getElementById("chat");
   var form = document.getElementById("f");

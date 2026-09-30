@@ -214,11 +214,29 @@ def enter_by_phone(db: Session, tenant_id: int, phone: str, *,
         db.flush()
         return Access(granted=True, stay=stay)
 
-    live = [d for d in stay.devices if d.revoked_at is None]
-    if len(live) >= MAX_DEVICES:
-        return Access(granted=False, stay=stay, reason="device_limit")
-
+    _make_room_for_a_device(db, stay, at)
     return _bind(db, stay, language=language)
+
+
+def _make_room_for_a_device(db: Session, stay: Stay, at: datetime) -> None:
+    """يُبطل الأقدم حين يمتلئ السقف، بدل أن يُغلق الباب في وجه القادم.
+
+    السقف موجود ليمنع إقامةً تُشارَك على عشرين جهازًا، لا ليعاقب نزيلًا
+    بجهاز خامس. والرفض كان يقع على من هو واقف في غرفته: يفتح الرابط فيُقال
+    له «اكتمل العدد، راجع الاستقبال» — وهو نزيل الغرفة فعلًا.
+
+    والتدوير صار مقبولًا حين صار المفتاح جوال النزيل نفسه: من أُبطل جهازه
+    يكتب رقمه فيعود. وأيام الرمز المشترك كان الرفض أسلم، لأن العودة كانت
+    تحتاج رمزًا قد لا يملكه.
+    """
+    live = sorted(
+        (d for d in stay.devices if d.revoked_at is None),
+        key=lambda d: _aware(d.last_seen_at or d.first_seen_at),
+    )
+    for stale in live[: max(0, len(live) - MAX_DEVICES + 1)]:
+        stale.revoked_at = at
+    if live:
+        db.flush()
 
 
 def close_stay(db: Session, stay: Stay, *, by: str = "desk") -> None:

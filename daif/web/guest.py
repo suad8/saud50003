@@ -28,7 +28,7 @@ from .. import degraded, phones, stay as stays
 from ..assistant import Assistant
 from ..clock import now_riyadh
 from ..db import get_session
-from ..models import Guest, Message, Tenant
+from ..models import Guest, Message, Stay, Tenant
 from ..ratelimit import GUEST_DOOR_IP, GUEST_DOOR_PHONE, GUEST_SEND, RateLimiter
 from ..repository import get_or_create_guest, load_knowledge_base
 from ..service import handle_inbound
@@ -98,6 +98,23 @@ def setup(templates) -> APIRouter:
         ctx.setdefault("languages", LANGUAGES)
         return templates.TemplateResponse(request, name, ctx)
 
+    def _demo_phone(db: Session, tenant: Tenant) -> str:
+        """جوال إقامة مفتوحة، في وضع العرض وحده.
+
+        الباب يسأل عن رقم مسجَّل، ومن يجرّب النظام لا يملك واحدًا — فيكتب
+        رقمه هو ويُردّ. الشاشة تُقرأ عطلًا وهي تعمل كما يجب. وصفحة الدخول
+        تُعلن بياناتها لنفس السبب، فهذا اتّساق لا استثناء.
+        """
+        from .. import demo as demo_mod
+
+        if demo_mod.banner(db) is None:
+            return ""
+        stay = db.scalar(
+            select(Stay).where(Stay.tenant_id == tenant.id, Stay.status == "open",
+                               Stay.phone_norm != "").order_by(Stay.id)
+        )
+        return getattr(stay, "phone_norm", "") or ""
+
     # ---------- المسح: اختيار اللغة ثم الإثبات ----------
 
     @router.get("/h/{slug}", response_class=HTMLResponse)
@@ -110,10 +127,12 @@ def setup(templates) -> APIRouter:
         if token and stays.check_device(db, visit.tenant.id, token).granted:
             db.commit()
             return RedirectResponse(visit.path + "/chat", status_code=303)
+        demo_phone = _demo_phone(db, visit.tenant)
         db.commit()
         return _page(request, "guest_enter.html", {
             "visit": visit, "hotel": visit.tenant, "prompt": PHONE_LABEL,
             "error": "", "needs_room": False, "phone": "",
+            "demo_phone": demo_phone,
         })
 
     @router.post("/h/{slug}/enter")
@@ -133,25 +152,46 @@ def setup(templates) -> APIRouter:
                 "prompt": ROOM_LABEL if needs_room else PHONE_LABEL,
                 "error": DENY_TEXT.get(reason, "ما قدرنا نفتح الجلسة."),
                 "needs_room": needs_room, "phone": phone, "language": language,
+                "demo_phone": _demo_phone(db, visit.tenant),
             })
 
         # حدّان معًا: على المصدر وعلى الرقم المطلوب. الأول يوقف من يجرّب
         # أرقامًا كثيرة، والثاني يوقف من يجرّب رقمًا واحدًا من مصادر كثيرة.
+        #
+        # ولا يُحتسب إلا الفشل. كان كل إدخال يستهلك محاولة ولو كان صحيحًا،
+        # فنزيلٌ فتح الرابط خمس مرات — وهو يفعل: يقفل التبويب ويعود — يجد
+        # الباب مقفلًا في وجهه. الحدّ لمنع التخمين، والداخل بحقّه لا يخمّن.
         normalized = phones.normalize(phone)
-        if not _limiter.hit(_client_key(request, f"door:{slug}"), GUEST_DOOR_IP):
+        by_ip = _client_key(request, f"door:{slug}")
+        by_phone = f"phone:{slug}:{normalized}" if normalized else ""
+
+        def spend(reason: str, *, needs_room: bool = False):
+            """يسجّل محاولة فاشلة ثم يعتذر."""
+            _limiter.hit(by_ip, GUEST_DOOR_IP)
+            if by_phone:
+                _limiter.hit(by_phone, GUEST_DOOR_PHONE)
+            return refuse(reason, needs_room=needs_room)
+
+        if not _limiter.remaining(by_ip, GUEST_DOOR_IP):
             return refuse("rate_limited")
-        if normalized and not _limiter.hit(f"phone:{slug}:{normalized}", GUEST_DOOR_PHONE):
+        if by_phone and not _limiter.remaining(by_phone, GUEST_DOOR_PHONE):
             return refuse("rate_limited")
         if not normalized:
-            return refuse("bad_phone")
+            return spend("bad_phone")
 
         access = stays.enter_by_phone(
             db, visit.tenant.id, phone, room=room, language=language,
             device_token=request.cookies.get(_cookie_name(slug), ""))
         if not access.granted:
             db.commit()
-            return refuse(access.reason, needs_room=access.challenge == "room")
+            # سؤال الغرفة ليس فشلًا: رقمه صحيح وعلى عدّة غرف، فلا يُعاقَب عليه.
+            if access.challenge == "room":
+                return refuse(access.reason, needs_room=True)
+            return spend(access.reason)
 
+        # دخل بحقّه: نمحو ما سُجِّل عليه، فلا تلاحقه محاولاته المتعثّرة.
+        if by_phone:
+            _limiter.reset(by_phone)
         db.commit()
         response = RedirectResponse(visit.path + "/chat", status_code=303)
         if access.token:

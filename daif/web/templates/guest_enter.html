@@ -8,6 +8,9 @@
   .lang[aria-pressed="true"]{background:var(--brand); border-color:var(--brand); color:#fff}
   .field{margin-bottom:16px}
   .go{width:100%; margin-top:4px}
+  .demo-hint{margin:0 0 14px; font-size:.86rem; color:var(--ink-2)}
+  .demo-num{font:inherit; font-weight:700; color:var(--accent); cursor:pointer;
+    background:none; border:0; border-bottom:1px dashed currentColor; padding:0 2px}
   .phone-in{font-size:1.15rem; font-weight:600; letter-spacing:.06em; direction:ltr; text-align:left}
 {% endblock %}
 {% block body %}
@@ -46,6 +49,14 @@
       <input id="room" name="room" required inputmode="numeric"
              pattern="[0-9A-Za-z-]*" maxlength="16" autofocus>
     </div>
+    {% endif %}
+
+    {% if demo_phone %}
+    {# منصة عرض: الباب يسأل عن رقم مسجَّل، ومن يجرّب لا يملك واحدًا. #}
+    <p class="demo-hint">
+      للتجربة استعمل: <button type="button" class="demo-num"
+        data-phone="{{ demo_phone }}" dir="ltr">{{ demo_phone }}</button>
+    </p>
     {% endif %}
 
     <button class="btn p go" type="submit">ابدأ</button>

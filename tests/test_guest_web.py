@@ -231,3 +231,102 @@ def test_a_new_guest_in_the_same_room_does_not_inherit_the_chat(client, hotel, d
     db.flush()
 
     assert "انتهت" in client.get(f"{DOOR}/chat").text
+
+
+# --- حدّ المحاولات يُحاسب الفشل وحده ---
+
+
+def test_entering_correctly_again_and_again_is_never_throttled(client, hotel, db):
+    """النزيل يقفل التبويب ويعود، والمجرِّب يفتح الرابط مرارًا.
+
+    كان كل إدخال يستهلك محاولة ولو كان صحيحًا، فيجد الباب مقفلًا في وجهه
+    بعد خمس دخلات ناجحة. الحدّ لمنع التخمين، والداخل بحقّه لا يخمّن.
+    """
+    check_in(db, hotel)
+
+    for attempt in range(8):
+        response = knock(client)
+        assert response.status_code == 303, f"خُنق عند الدخلة الناجحة رقم {attempt + 1}"
+
+
+def test_hammering_one_number_is_still_stopped(client, hotel, db):
+    """الحدّ الذي يهمّ: من يستهدف نزيلًا بعينه يُوقَف على رقمه."""
+    check_in(db, hotel)
+
+    seen = [knock(client, phone="0509999999").text for _ in range(9)]
+    assert any("محاولات كثيرة" in body for body in seen), "التخمين على رقم واحد بلا حدّ"
+
+
+def test_sweeping_many_numbers_is_still_stopped(client, hotel, db):
+    """ومن يمسح أرقامًا كثيرة يُوقَف على مصدره."""
+    check_in(db, hotel)
+
+    seen = [knock(client, phone=f"05099{i:05d}").text for i in range(50)]
+    assert any("محاولات كثيرة" in body for body in seen), "المسح بلا حدّ"
+
+
+def test_a_success_wipes_the_failures_that_came_before_it(client, hotel, db):
+    """من أخطأ رقمه مرّتين ثم أصابه لا تلاحقه محاولاته المتعثّرة."""
+    check_in(db, hotel)
+
+    for _ in range(3):
+        knock(client, phone=PHONE[:-1] + "0")      # رقم قريب وخاطئ
+    assert knock(client).status_code == 303
+
+    client.cookies.clear()
+    for _ in range(4):
+        assert knock(client).status_code == 303
+
+
+def test_being_asked_for_the_room_does_not_cost_an_attempt(client, hotel, db):
+    """رقمه صحيح وعلى عدّة غرف — سؤالٌ لا فشل، فلا يُعاقَب عليه."""
+    check_in(db, hotel, room="402")
+    check_in(db, hotel, room="403")
+
+    for _ in range(6):
+        body = knock(client).text
+        assert "محاولات كثيرة" not in body
+        assert 'name="room"' in body
+
+
+# --- رقم التجربة على الباب في وضع العرض ---
+
+
+def test_the_door_offers_a_working_number_in_demo_mode(client, hotel, db):
+    """من يجرّب النظام لا يملك رقمًا مسجَّلًا، فيكتب رقمه ويُردّ."""
+    from daif import demo as demo_mod
+
+    check_in(db, hotel)
+    demo_mod.enable(db, platform_email="a@d.sa", staff_email="r@t.sa",
+                    password="x", hotel="فندق طيبة")
+    db.flush()
+
+    body = client.get(DOOR).text
+    assert "للتجربة استعمل" in body
+    assert "966501234567" in body
+
+
+def test_a_real_deployment_offers_no_such_hint(client, hotel, db):
+    check_in(db, hotel)
+    assert "للتجربة استعمل" not in client.get(DOOR).text
+
+
+def test_a_fifth_device_replaces_the_oldest_instead_of_being_refused(client, hotel, db):
+    """السقف يمنع إقامةً تُشارَك على عشرين جهازًا، لا نزيلًا بجهاز خامس.
+
+    والرفض كان يقع على من هو واقف في غرفته. والتدوير مقبول لأن المفتاح صار
+    جواله: من أُبطل جهازه يكتب رقمه فيعود.
+    """
+    from sqlalchemy import select
+
+    from daif.models import Stay, StayDevice
+
+    check_in(db, hotel)
+    for _ in range(stays.MAX_DEVICES + 3):
+        client.cookies.clear()
+        assert knock(client).status_code == 303
+
+    stay = db.scalar(select(Stay).where(Stay.room == "402"))
+    live = [d for d in stay.devices if d.revoked_at is None]
+    assert len(live) == stays.MAX_DEVICES, "السقف انكسر بدل أن يدوّر"
+    assert len(db.scalars(select(StayDevice)).all()) > stays.MAX_DEVICES
