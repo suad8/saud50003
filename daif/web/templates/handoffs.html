@@ -34,8 +34,14 @@
           <td class="nowrap">{{ t('to_' ~ h.to) }}</td>
           <td class="muted">{{ h.note }}</td>
           <td class="nowrap num">
+            {# التحويل معناه أن النزيل ينتظر إنسانًا. فالردّ هو الإجراء
+               الأول هنا لا الإغلاق — والإغلاق بلا ردّ يترك النزيل ينتظر. #}
+            {% if h.guest_id %}
+            <a class="btn sm {{ 'primary' if h.status == 'open' }}"
+               href="/conversations?guest={{ h.guest_id }}&handoff={{ h.id }}">{{ t('open_chat') }}</a>
+            {% endif %}
             {% if h.status == 'open' %}
-            <form method="post" action="/handoffs/{{ h.id }}/resolve">
+            <form method="post" action="/handoffs/{{ h.id }}/resolve" style="display:inline">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <button class="btn sm" type="submit">{{ t('resolve') }}</button>
             </form>

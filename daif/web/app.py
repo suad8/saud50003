@@ -657,10 +657,24 @@ def tickets_page(
     )
 
 
+def _safe_back(raw: str, fallback: str) -> str:
+    """وجهة الرجوع بعد الإجراء، من داخل الموقع وحده.
+
+    الحقل يأتي من نموذج، فقد يأتي من أي مكان. مسار داخلي يبدأ بشرطة واحدة
+    لا غير: «//host» و«https://host» يخرجان من الموقع، فيصير الزرّ تحويلًا
+    مفتوحًا إلى أي عنوان.
+    """
+    value = (raw or "").strip()
+    if value.startswith("/") and not value.startswith("//"):
+        return value
+    return fallback
+
+
 @app.post("/tickets/{ticket_id}/status")
 def ticket_status(
     ticket_id: int,
     status: str = Form(...),
+    back: str = Form(""),
     session: Session = Depends(get_session),
     principal: Principal | None = Depends(current_principal),
 ) -> Response:
@@ -673,7 +687,7 @@ def ticket_status(
             ticket.status = status
             ticket.assigned_to = principal.user.email
             ticket.closed_at = now_riyadh() if status in ("done", "cancelled") else None
-    return RedirectResponse("/tickets", status_code=303)
+    return RedirectResponse(_safe_back(back, "/tickets"), status_code=303)
 
 
 @app.get("/handoffs", response_class=HTMLResponse)
@@ -695,6 +709,7 @@ def handoffs_page(
 @app.post("/handoffs/{handoff_id}/resolve")
 def handoff_resolve(
     handoff_id: int,
+    back: str = Form(""),
     session: Session = Depends(get_session),
     principal: Principal | None = Depends(current_principal),
 ) -> Response:
@@ -706,7 +721,7 @@ def handoff_resolve(
         record.status = "resolved"
         record.resolved_by = principal.user.email
         record.resolved_at = now_riyadh()
-    return RedirectResponse("/handoffs", status_code=303)
+    return RedirectResponse(_safe_back(back, "/handoffs"), status_code=303)
 
 
 # ---------------------------------------------------------------------------
@@ -717,6 +732,8 @@ def handoff_resolve(
 def conversations_page(
     request: Request,
     guest: int | None = Query(default=None),
+    ticket: int | None = Query(default=None),
+    handoff: int | None = Query(default=None),
     session: Session = Depends(get_session),
     principal: Principal | None = Depends(current_principal),
 ) -> Response:
@@ -733,7 +750,28 @@ def conversations_page(
     return _render(
         request, session, principal, "conversations.html", "conversations",
         guests=guests, selected=selected, messages=messages,
+        # القادم من تذكرة أو تحويل يحمل سببه معه: يردّ ويغلق من شاشة واحدة
+        # بدل أن يرجع لقائمة ويبحث عن السطر الذي جاء منه.
+        context=_thread_context(session, principal.tenant.id, ticket, handoff),
     )
+
+
+def _thread_context(session, tenant_id: int, ticket_id: int | None,
+                    handoff_id: int | None) -> dict | None:
+    """التذكرة أو التحويل الذي فُتحت المحادثة من أجله."""
+    if ticket_id is not None:
+        row = session.get(Ticket, ticket_id)
+        if row is not None and row.tenant_id == tenant_id:
+            return {"kind": "ticket", "id": row.id, "room": row.room,
+                    "text": row.detail, "status": row.status,
+                    "done": row.status in ("done", "cancelled")}
+    if handoff_id is not None:
+        row = session.get(HandoffRecord, handoff_id)
+        if row is not None and row.tenant_id == tenant_id:
+            return {"kind": "handoff", "id": row.id, "room": "",
+                    "text": row.guest_text or row.note, "status": row.status,
+                    "done": row.status == "resolved"}
+    return None
 
 
 @app.post("/conversations/{guest_id}/reply")

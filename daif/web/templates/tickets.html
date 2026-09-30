@@ -41,6 +41,12 @@
             <span class="badge {{ cls.get(tk.status,'') }}">{{ t('status_' ~ tk.status) }}</span>
           </td>
           <td class="nowrap num">
+            {# التذكرة نشأت من كلام نزيل. بلا هذا الرابط يقرأ الموظف الطلب
+               ولا يجد طريقًا للردّ عليه — وهو أول ما يحتاجه. #}
+            {% if tk.guest_id %}
+            <a class="btn sm" href="/conversations?guest={{ tk.guest_id }}&ticket={{ tk.id }}"
+               title="{{ t('open_chat') }}">{{ t('open_chat') }}</a>
+            {% endif %}
             <form method="post" action="/tickets/{{ tk.id }}/status" class="row" style="gap:5px; justify-content:flex-end">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <select name="status" onchange="this.form.submit()">

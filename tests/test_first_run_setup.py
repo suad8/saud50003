@@ -14,7 +14,8 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from daif.models import Fact, PlatformAdmin, Stay, Tenant, Ticket
+from daif.models import (Fact, HandoffRecord, Message, PlatformAdmin, Stay,
+                         Tenant, Ticket)
 from daif.web import app as app_module
 
 
@@ -90,3 +91,30 @@ def test_pressing_it_twice_does_not_duplicate_anything(client, db):
 def test_the_button_is_not_a_bare_endpoint_anyone_can_curl(client):
     """بلا رمز حماية: طلب من موقع آخر يزرع على منصة لم يفتحها صاحبها بعد."""
     assert client.post("/setup/demo").status_code == 403
+
+
+def test_every_seeded_ticket_opens_a_real_conversation(client, db):
+    """تذكرة بلا نزيل تُخفي زرّ «فتح المحادثة».
+
+    فيبدو أهمّ ما في شاشة الاستقبال معطوبًا في العرض نفسه الذي يُفترض أن
+    يبيّنه. وهذا وقع فعلًا: التذاكر كانت تُنثر بلا صاحب.
+    """
+    seed_via_page(client)
+
+    tickets = db.scalars(select(Ticket)).all()
+    assert tickets
+    for ticket in tickets:
+        assert ticket.guest_id, f"تذكرة غرفة {ticket.room} بلا نزيل"
+        thread = db.scalars(
+            select(Message).where(Message.guest_id == ticket.guest_id)).all()
+        assert thread, f"تذكرة غرفة {ticket.room} تفتح محادثة فارغة"
+
+
+def test_an_open_handoff_is_waiting_too(client, db):
+    """التحويل شاشةٌ كاملة في اللوحة — وكانت فارغة في كل عرض."""
+    seed_via_page(client)
+
+    handoffs = db.scalars(select(HandoffRecord)).all()
+    assert handoffs, "لا تحويلات — شاشة التحويلات تُعرض فارغة"
+    assert any(h.status == "open" for h in handoffs)
+    assert all(h.guest_id for h in handoffs)

@@ -100,7 +100,8 @@ def seed(session, *, hotel: str = DEFAULT_HOTEL, slug: str = DEFAULT_SLUG,
 
     from . import stay as stay_mod
     from .clock import now_riyadh
-    from .models import Fact, PlatformAdmin, StaffUser, Tenant, Ticket
+    from .models import (Fact, Guest, HandoffRecord, Message, PlatformAdmin,
+                     StaffUser, Tenant, Ticket)
     from .security import hash_password
 
     if session.scalar(select(Tenant).limit(1)) is not None:
@@ -146,14 +147,57 @@ def seed(session, *, hotel: str = DEFAULT_HOTEL, slug: str = DEFAULT_SLUG,
     enable(session, platform_email=platform_email, staff_email=staff_email,
            password=password, hotel=hotel)
 
+    # التذاكر تُربط بنزلاء لهم محادثات حقيقية، لا تُنثر بلا صاحب. تذكرةٌ بلا
+    # نزيل تُخفي زرّ «فتح المحادثة» — فيبدو أهمّ ما في الشاشة معطوبًا في
+    # العرض نفسه الذي يُفترض أن يبيّنه.
     now = now_riyadh()
-    for ty, room, detail, urg, status in [
-        ("صيانة", "318", "المكيف ما يبرّد — مكرّرة من أمس", "urgent", "open"),
-        ("تدبير فندقي", "512", "مناشف إضافية ووسادة", "normal", "open"),
-        ("تدبير فندقي", "407", "تنظيف الغرفة الساعة ٤ العصر", "normal", "in_progress"),
-        ("صيانة", "233", "الدش ماؤه بارد", "normal", "done"),
-    ]:
-        session.add(Ticket(tenant_id=tenant.id, type=ty, room=room, detail=detail,
-                           urgency=urg, status=status, created_at=now))
+    threads = [
+        ("318", "صيانة", "المكيف ما يبرّد — مكرّرة من أمس", "urgent", "open",
+         [("in", "المكيف ما يبرّد من أمس، والغرفة حارة"),
+          ("out", "آسفين على الإزعاج. رفعت طلب صيانة عاجل وبيوصلك فني خلال ٢٠ دقيقة.")]),
+        ("512", "تدبير فندقي", "مناشف إضافية ووسادة", "normal", "open",
+         [("in", "ممكن مناشف زيادة ووسادة؟"),
+          ("out", "أبشر. وصل طلبك لتدبير الغرف.")]),
+        ("407", "تدبير فندقي", "تنظيف الغرفة الساعة ٤ العصر", "normal", "in_progress",
+         [("in", "أبغى تنظيف الغرفة الساعة ٤ العصر")]),
+        ("233", "صيانة", "الدش ماؤه بارد", "normal", "done",
+         [("in", "الدش ماؤه بارد"),
+          ("out", "تم الإصلاح، جرّبه الحين ولو بقي شي كلّمنا.")]),
+    ]
+    for index, (room, ty, detail, urg, status, script) in enumerate(threads):
+        guest = Guest(tenant_id=tenant.id, wa_id=f"demo:{room}", room=room,
+                      language="ar")
+        session.add(guest)
+        session.flush()
+        last = None
+        for step, (direction, text) in enumerate(script):
+            last = Message(
+                tenant_id=tenant.id, guest_id=guest.id, direction=direction,
+                text=text, language="ar",
+                sent_by=("ريم · الاستقبال" if direction == "out" else ""),
+                created_at=now - timedelta(minutes=(len(threads) - index) * 12 - step),
+            )
+            session.add(last)
+        session.flush()
+        session.add(Ticket(tenant_id=tenant.id, guest_id=guest.id,
+                           message_id=last.id if last else None,
+                           type=ty, room=room, detail=detail, urgency=urg,
+                           status=status, created_at=now))
+
+    # تحويل واحد مفتوح: شكوى لا يجوز للمساعد أن يجيب عنها، فتنتظر إنسانًا.
+    complainant = Guest(tenant_id=tenant.id, wa_id="demo:608", room="608",
+                        language="ar")
+    session.add(complainant)
+    session.flush()
+    grievance = "الغرفة اللي وصلتني مو اللي حجزتها، وأبغى أكلم المسؤول"
+    session.add(Message(tenant_id=tenant.id, guest_id=complainant.id,
+                        direction="in", text=grievance, language="ar",
+                        created_at=now - timedelta(minutes=6)))
+    session.flush()
+    session.add(HandoffRecord(
+        tenant_id=tenant.id, guest_id=complainant.id, reason="complaint",
+        to="desk", guest_text=grievance, status="open",
+        note="شكوى — المساعد لا يجيب عنها ويحوّلها فورًا",
+        created_at=now - timedelta(minutes=6)))
 
     return Seeded(platform_email, staff_email, password, codes)

@@ -3,6 +3,15 @@
 {% block heading %}{{ t('conversations_title') }}{% endblock %}
 {% block subtitle %}{% endblock %}
 
+{% block style %}
+  .thread-ctx{display:flex; gap:14px; align-items:flex-start; justify-content:space-between;
+    background:var(--amber-soft); border:1px solid color-mix(in srgb,var(--amber) 34%,transparent);
+    border-radius:var(--radius); padding:12px 14px; margin-bottom:16px}
+  .thread-ctx.done{background:transparent; border-color:var(--line)}
+  .thread-ctx p{line-height:1.6}
+  .ctx-act{flex:none}
+{% endblock %}
+
 {% block content %}
 <div class="grid" style="grid-template-columns: minmax(210px, 270px) 1fr; align-items:start">
   <section class="card">
@@ -35,6 +44,29 @@
       {% if selected %}<span class="badge">{{ t('room') }} {{ selected.room or '—' }}</span>{% endif %}
     </div>
     <div class="card-body">
+      {% if context %}
+      {# جئت من تذكرة أو تحويل: سببه أمامك، وإغلاقه من هنا — الرجوع للقائمة
+         للبحث عن السطر الذي جئت منه خطوةٌ تُنسى فيبقى مفتوحًا بعد الردّ. #}
+      <div class="thread-ctx {{ 'done' if context.done }}">
+        <div>
+          <span class="badge {{ 'green' if context.done else 'amber' }}">
+            {{ t('ticket') if context.kind == 'ticket' else t('handoff') }}
+            {%- if context.room %} · {{ context.room }}{% endif %}
+          </span>
+          <p style="margin:7px 0 0">{{ context.text }}</p>
+        </div>
+        {% if not context.done %}
+        <form method="post" class="ctx-act"
+              action="{{ '/tickets/' ~ context.id ~ '/status' if context.kind == 'ticket'
+                         else '/handoffs/' ~ context.id ~ '/resolve' }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="back" value="/conversations?guest={{ selected.id }}">
+          {% if context.kind == 'ticket' %}<input type="hidden" name="status" value="done">{% endif %}
+          <button class="btn sm" type="submit">{{ t('resolve') }}</button>
+        </form>
+        {% else %}<span class="badge green">{{ t('resolved') }}</span>{% endif %}
+      </div>
+      {% endif %}
       {% if messages %}
       <div class="stack">
         {% for m in messages %}

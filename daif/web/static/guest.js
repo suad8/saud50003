@@ -135,10 +135,91 @@
     q.addEventListener("click", function () { say(q.dataset.say, q.dataset.key); });
   });
 
-  // رد الاستقبال يصل هنا. كل عشر ثوانٍ، وتتوقف حين تكون الصفحة مخفية حتى لا
-  // نستنزف بطارية جوال في جيب صاحبه.
+  // ---------- التنبيه حين يكون النزيل خارج الصفحة ----------
+  //
+  // النزيل يسأل ثم يخرج من المتصفح ينتظر. فالرد الذي يصل بلا صوت لا يصل
+  // فعلًا: يجده بعد ساعة، ويكون الموظف قد انتظر ردًّا لم يأتِ.
+
+  var audio = null;
+  var unheard = 0;
+  var baseTitle = document.title;
+
+  // النغمة مولَّدة لا ملفًّا: لا طلب ثانيًا على شبكة فندق بطيئة، ولا صمتًا
+  // حين يفشل تحميل الملف — والصمت هنا هو العطل نفسه الذي نعالجه.
+  function unlock() {
+    if (audio) return;
+    var Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    try {
+      audio = new Ctx();
+      if (audio.state === "suspended") audio.resume();
+    } catch (e) { audio = null; }
+  }
+
+  function chime() {
+    if (!audio) return;
+    try {
+      if (audio.state === "suspended") audio.resume();
+      // نغمتان صاعدتان قصيرتان: تُسمع في ردهة فندق ولا تزعج في غرفة.
+      [[880, 0], [1175, 0.12]].forEach(function (pair) {
+        var osc = audio.createOscillator();
+        var gain = audio.createGain();
+        osc.type = "sine";
+        osc.frequency.value = pair[0];
+        var start = audio.currentTime + pair[1];
+        gain.gain.setValueAtTime(0.0001, start);
+        gain.gain.exponentialRampToValueAtTime(0.22, start + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.28);
+        osc.connect(gain).connect(audio.destination);
+        osc.start(start);
+        osc.stop(start + 0.3);
+      });
+    } catch (e) {}
+  }
+
+  function badge() {
+    document.title = unheard ? "(" + unheard + ") " + baseTitle : baseTitle;
+  }
+
+  function popup(text) {
+    if (!("Notification" in window) || Notification.permission !== "granted") return;
+    try {
+      var n = new Notification(baseTitle, { body: text, tag: "daif-reply", renotify: true });
+      n.onclick = function () { window.focus(); n.close(); };
+    } catch (e) {}
+  }
+
+  function alertGuest(messages) {
+    var staff = messages.filter(function (m) { return m.staff; });
+    if (!staff.length) return;
+    chime();
+    if (document.hidden) {
+      unheard += staff.length;
+      badge();
+      popup(staff[staff.length - 1].text);
+    }
+  }
+
+  // الإذن يُطلب بعد أول رسالة يرسلها النزيل، لا عند فتح الصفحة: طلبٌ قبل أن
+  // يفعل شيئًا يُرفض غالبًا، والرفض نهائي لا يُسأل بعده.
+  function askOnce() {
+    if (!("Notification" in window) || Notification.permission !== "default") return;
+    try { Notification.requestPermission(); } catch (e) {}
+  }
+
+  ["pointerdown", "keydown"].forEach(function (evt) {
+    document.addEventListener(evt, unlock, { once: true, passive: true });
+  });
+  form.addEventListener("submit", askOnce, { once: true });
+
+  // ردّ الاستقبال يصل هنا. نواصل الاستطلاع والصفحة مخفية — وهذا هو مربط
+  // الفرس: نزيل خرج من المتصفح لن يرى شيئًا إن توقّفنا. لكن بوتيرة أبطأ،
+  // فجوالٌ في جيب صاحبه لا يُستنزف من أجل محادثة ساكنة.
+  var VISIBLE_MS = 10000;
+  var HIDDEN_MS = 30000;
+  var timer = null;
+
   function pollOnce() {
-    if (document.hidden) return;
     fetch(POLL + "?after=" + lastId, { credentials: "same-origin" })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (j) {
@@ -146,12 +227,24 @@
         var stick = atBottom();
         j.messages.forEach(bubble);
         if (stick) toBottom();
+        alertGuest(j.messages);
       })
       .catch(function () {});
   }
-  setInterval(pollOnce, 10000);
+
+  function schedule() {
+    if (timer) clearInterval(timer);
+    timer = setInterval(pollOnce, document.hidden ? HIDDEN_MS : VISIBLE_MS);
+  }
+
+  schedule();
   document.addEventListener("visibilitychange", function () {
-    if (!document.hidden) pollOnce();
+    schedule();
+    if (!document.hidden) {
+      unheard = 0;
+      badge();
+      pollOnce();
+    }
   });
 
   toBottom();
