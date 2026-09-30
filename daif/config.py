@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import os
+import re
 from dataclasses import dataclass, field
+
+
+logger = logging.getLogger(__name__)
 
 
 def _env(name: str, default: str) -> str:
@@ -38,43 +43,139 @@ PG_URL_ENV_NAMES = (
 )
 
 
-def _pg_url_from_parts() -> str:
-    """يركّب العنوان من متغيّرات libpq المنفصلة إن وُجدت بلا عنوان كامل."""
-    host = _env("PGHOST", "")
-    name = _env("PGDATABASE", "")
-    user = _env("PGUSER", "")
-    if not (host and name and user):
-        return ""
+def usable_url(value: str) -> bool:
+    """هل يقرأ SQLAlchemy هذا عنوانًا؟ نسأله هو ولا نخمّن بتعبير نمطي."""
+    if not value or "://" not in value:
+        return False
+    try:
+        from sqlalchemy.engine.url import make_url
+
+        make_url(value)
+    except Exception:
+        return False
+    return True
+
+
+_URL_IN_TEXT = re.compile(r"postgres(?:ql)?://[^\s\"'<>,;]+")
+
+# أسماء أجزاء الاتصال كما تحقنها المنصّات، مرتّبةً بالأفضلية داخل كل دور.
+_PART_NAMES = {
+    "host": ("PGHOST", "POSTGRES_HOST", "DB_HOST", "RAILWAY_PRIVATE_DOMAIN"),
+    "name": ("PGDATABASE", "POSTGRES_DB", "DB_NAME"),
+    "user": ("PGUSER", "POSTGRES_USER", "DB_USER"),
+    "password": ("PGPASSWORD", "POSTGRES_PASSWORD", "DB_PASSWORD"),
+    "port": ("PGPORT", "POSTGRES_PORT", "DB_PORT"),
+}
+
+
+def _assemble(lookup) -> str:
+    """يركّب العنوان من أجزاء منفصلة. `lookup(name)` يرجع القيمة أو فراغًا."""
     from urllib.parse import quote
 
-    password = _env("PGPASSWORD", "")
+    def first(role: str) -> str:
+        for name in _PART_NAMES[role]:
+            value = lookup(name)
+            if value:
+                return value
+        return ""
+
+    host, name, user = first("host"), first("name"), first("user")
+    if not (host and name and user):
+        return ""
     auth = quote(user, safe="")
+    password = first("password")
     if password:
         auth += ":" + quote(password, safe="")
-    port = _env("PGPORT", "5432")
-    return f"postgresql+psycopg://{auth}@{host}:{port}/{name}"
+    return f"postgresql+psycopg://{auth}@{host}:{first('port') or '5432'}/{name}"
+
+
+def _pg_url_from_parts() -> str:
+    """يركّب العنوان من متغيّرات منفصلة في البيئة إن وُجدت بلا عنوان كامل."""
+    return _assemble(lambda name: _env(name, ""))
+
+
+def recover_from_blob(raw: str) -> str:
+    """ينتشل عنوانًا من قيمة لُصقت فيها كتلة متغيّرات كاملة.
+
+    غلط متكرّر ومكلف: تُنسخ قائمة متغيّرات خدمة قاعدة البيانات كلها وتُلصق
+    في خانة قيمة واحدة. القيمة حينها ليست عنوانًا، والنتيجة أثر تتبّع من
+    SQLAlchemy وجولة نشر ضائعة في كل محاولة.
+
+    ولأن الانتشال لا يجري إلا على قيمة **معطوبة أصلًا**، فأسوأ ما يفعله أن
+    يفشل كما كانت تفشل — ولا يمسّ إعدادًا سليمًا أبدًا.
+    """
+    if not raw:
+        return ""
+
+    match = _URL_IN_TEXT.search(raw)
+    if match and usable_url(match.group(0)):
+        return _normalise_pg(match.group(0))
+
+    pairs: dict[str, str] = {}
+    for chunk in re.split(r"[\s]+", raw.strip()):
+        key, sep, value = chunk.partition("=")
+        if sep and key:
+            pairs[key.strip()] = value.strip().strip("\"'")
+
+    for name in PG_URL_ENV_NAMES:
+        candidate = _normalise_pg(pairs.get(name, ""))
+        if usable_url(candidate):
+            return candidate
+
+    assembled = _assemble(lambda name: pairs.get(name, ""))
+    return assembled if usable_url(assembled) else ""
+
+
+@dataclass(frozen=True)
+class Discovery:
+    """نتيجة البحث عن قاعدة البيانات، بما فيها ما رُفض ولماذا."""
+
+    url: str = ""
+    source: str = ""
+    recovered: bool = False
+    rejected: tuple[tuple[str, str], ...] = ()
+
+
+def discover() -> Discovery:
+    """يبحث عن عنوان صالح، وينتشل من قيمة معطوبة، ويبلّغ عمّا رفضه.
+
+    القاعدة: قيمة لا تصلح عنوانًا لا تُستعمل. كانت تُستعمل، فتحجب البديل
+    المحلّي وتُسقط الإقلاع حتى بعد إلغاء وضع الإنتاج — عطلٌ بلا مخرج.
+    """
+    rejected: list[tuple[str, str]] = []
+    for name in PG_URL_ENV_NAMES:
+        raw = _env(name, "")
+        if not raw:
+            continue
+        direct = _normalise_pg(raw)
+        if usable_url(direct) or direct.startswith("sqlite"):
+            return Discovery(url=direct, source=name)
+        salvaged = recover_from_blob(raw)
+        if salvaged:
+            logger.warning(
+                "قيمة %s ليست عنوانًا، لكن انتُشل منها عنوان صالح. "
+                "أصلحها في لوحة الاستضافة — الانتشال ليس بديلًا عن إعداد سليم.",
+                name)
+            return Discovery(url=salvaged, source=name, recovered=True)
+        rejected.append((name, raw))
+        logger.error("قيمة %s ليست عنوانًا ولا يمكن انتشال عنوان منها — تُتجاهل.", name)
+
+    assembled = _pg_url_from_parts()
+    if assembled:
+        return Discovery(url=assembled, source="PGHOST/PGUSER/…")
+    return Discovery(rejected=tuple(rejected))
 
 
 def discovered_database_url() -> str:
-    """العنوان الذي وجدناه في البيئة، أو فراغ إن لم يُضبط أي اسم.
-
-    مفصول عن `_database_url` كي يستعمله فحص ما قبل الإقلاع بنفس المنطق: أسوأ
-    ما قد يحصل أن يوقف الفحص إقلاعًا كانت قاعدة البيانات فيه موجودة فعلًا.
-    يرجع ما وُجد كما هو — حتى لو كان SQLite صريحًا؛ الحكم على نوعه ليس هنا.
-    """
-    for name in PG_URL_ENV_NAMES:
-        value = _env(name, "")
-        if value:
-            return _normalise_pg(value)
-    return _pg_url_from_parts()
+    """العنوان الصالح الذي وُجد، أو فراغ. لا يرجع قيمة معطوبة أبدًا."""
+    return discover().url
 
 
 def _database_url() -> str:
-    """عنوان قاعدة البيانات، مع تكيّف مع منصات النشر.
+    """عنوان قاعدة البيانات. يرجع للقاعدة المحلّية حين لا يوجد عنوان صالح.
 
-    Railway وHeroku وأمثالهما يحقنون العنوان عند ربط قاعدة بيانات، وبصيغة
-    `postgres://` أو `postgresql://` التي لا يفهمها SQLAlchemy 2 بلا اسم
-    المشغّل. نحوّلها هنا بدل أن يكتشف المشغّل الخطأ عند أول إقلاع.
+    وهذا الرجوع هو المخرج: قيمةٌ معطوبة كانت تُستعمل كما هي فتحجبه، فيسقط
+    الإقلاع حتى بعد إلغاء وضع الإنتاج — عطلٌ لا مهرب منه إلا بإصلاح اللوحة.
     """
     return discovered_database_url() or "sqlite:///var/daif.db"
 

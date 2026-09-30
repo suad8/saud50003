@@ -156,38 +156,40 @@ def check(*, production: bool | None = None) -> list[Problem]:
             fatal=False,
         ))
 
-    url = discovered_database_url()
+    from .config import PG_URL_ENV_NAMES, discover
 
-    # عنوان موجود لكنه لا يُقرأ: أشيع سببه مرجع منصّة لم يُحلّ، فتُحفظ قيمته
-    # نصًّا كما كُتبت. بلا هذا الفحص يصل الناشر إلى أثر تتبّع من SQLAlchemy
-    # داخل ترحيلات ألمبك — صحيح ولا يدلّ على المتغيّر ولا على إصلاحه.
-    if url and not url.startswith("sqlite"):
-        unresolved = any(marker in url for marker in REFERENCE_MARKERS)
-        if unresolved:
-            found.append(Problem(
-                "DATABASE_URL",
-                "قيمته نصّ مرجع لم تحلّه المنصّة، فلا يصلح عنوانًا. غالبًا "
-                "لوجود مسافات داخل القوسين أو علامات اقتباس حوله: اكتبه "
-                "ملتصقًا بلا مسافات ولا اقتباس.",
-                fatal=True,
-            ))
-        elif not _parses_as_url(url):
-            found.append(Problem(
-                "DATABASE_URL",
-                "قيمته موجودة لكن SQLAlchemy لا يقرؤها عنوانًا. "
-                f"القيمة التي وصلتنا: {describe_value(url)} "
-                "والشكل المتوقَّع: postgresql://مستخدم:كلمة@مضيف:5432/قاعدة",
-                fatal=True,
-            ))
+    found_db = discover()
 
+    # قيمة موجودة لا تصلح عنوانًا: تُتجاهل الآن بدل أن تُستعمل، فيبقى البديل
+    # المحلّي مخرجًا. لكن السكوت عنها يترك الناشر يظنّ إعداده سليمًا.
+    for name, raw in found_db.rejected:
+        if any(marker in raw for marker in REFERENCE_MARKERS):
+            # مرجع منصّة لم يُحلّ: سببه معروف ومحدّد، فله رسالته الخاصة.
+            detail = ("قيمته نصّ مرجع لم تحلّه المنصّة، فلا يصلح عنوانًا. "
+                      "غالبًا لوجود مسافات داخل القوسين أو علامات اقتباس "
+                      "حوله: اكتبه ملتصقًا بلا مسافات ولا اقتباس.")
+        else:
+            detail = ("قيمته موجودة لكنها لا تصلح عنوانًا، فتُتجاهل. "
+                      f"القيمة التي وصلتنا: {describe_value(raw)} "
+                      "والشكل المتوقَّع: postgresql://مستخدم:كلمة@مضيف:5432/قاعدة")
+        found.append(Problem(name, detail, fatal=production))
+
+    if found_db.recovered:
+        found.append(Problem(
+            found_db.source,
+            "قيمته ليست عنوانًا، لكن انتُشل منها عنوان صالح والنظام يعمل به. "
+            "أصلحها في لوحة الاستضافة — الانتشال تدبيرٌ للطوارئ لا إعداد.",
+            fatal=False,
+        ))
+
+    url = found_db.url
     if production and (not url or url.startswith("sqlite")):
         names = "، ".join(PG_URL_ENV_NAMES)
-        found.append(Problem(
-            "DATABASE_URL",
-            "الإنتاج على SQLite يفقد كل البيانات مع كل نشر — القرص مؤقت. "
-            f"بحثنا عن: {names} (وعن PGHOST/PGDATABASE/PGUSER) فما وجدنا شيئًا.",
-            fatal=True,
-        ))
+        detail = ("الإنتاج على SQLite يفقد كل البيانات مع كل نشر — القرص مؤقت. "
+                  + (f"بحثنا عن: {names} (وعن PGHOST/PGDATABASE/PGUSER) فما وجدنا شيئًا."
+                     if not found_db.rejected else
+                     "والقيم الموجودة لا تصلح عناوين — انظر ما فوقها."))
+        found.append(Problem("DATABASE_URL", detail, fatal=True))
 
     if production and not os.environ.get("WHATSAPP_APP_SECRET", "").strip():
         found.append(Problem(

@@ -263,18 +263,46 @@ def test_a_bare_value_with_no_scheme_is_not_echoed_at_all(monkeypatch, no_databa
     assert "ليست عنوانًا" in html
 
 
-@pytest.mark.parametrize("value,expected", [
-    ('"postgresql://u:p@h:5432/d"', "علامات اقتباس"),
-    ("DATABASE_URL=postgresql://u:p@h/d", "لصقت السطر كاملًا"),
-    ("postgres.railway.internal", "ليست عنوانًا"),
+@pytest.mark.parametrize("value", [
+    '"postgresql://u:p@h:5432/d"',                   # محاطة باقتباس
+    "DATABASE_URL=postgresql://u:p@h/d",             # السطر كاملًا في الخانة
 ])
-def test_each_common_mistake_names_itself(monkeypatch, no_database_env, value, expected):
-    """التخمين يكلّف جولة نشر كاملة في كل مرة."""
+def test_a_recoverable_mistake_boots_and_says_so(monkeypatch, no_database_env, value):
+    """غلطة لصق شائعة لا يجوز أن تكلّف نشرًا كاملًا. تُنتشل، ويُقال إنها انتُشلت."""
     monkeypatch.setenv("DATABASE_URL", value)
 
-    problems = [p for p in preflight.check(production=True)
-                if p.key == "DATABASE_URL" and p.fatal]
-    assert problems and expected in problems[0].detail
+    problems = preflight.check(production=True)
+    assert not [p for p in problems if p.fatal], "غلطة قابلة للانتشال أوقفت الإقلاع"
+    assert any("انتُشل" in p.detail for p in problems), "انتُشلت بصمت"
+
+
+def test_a_pasted_variables_block_is_recovered(monkeypatch, no_database_env):
+    """الحالة التي وقعت فعلًا: قائمة متغيّرات الخدمة كلها في خانة قيمة واحدة."""
+    from daif import config
+
+    monkeypatch.setenv("DATABASE_URL", (
+        "PGDATA=/var/lib/postgresql/data/pgdata\nPGDATABASE=railway\n"
+        "PGHOST=postgres.railway.internal\nPGPASSWORD=s3cret\n"
+        "PGPORT=5432\nPGUSER=postgres\nSSL_CERT_DAYS=820"))
+
+    assert config.discovered_database_url() == (
+        "postgresql+psycopg://postgres:s3cret@postgres.railway.internal:5432/railway")
+    assert not [p for p in preflight.check(production=True) if p.fatal]
+
+
+def test_a_hopeless_value_is_ignored_so_the_local_fallback_still_works(
+    monkeypatch, no_database_env
+):
+    """قيمة معطوبة كانت تُستعمل كما هي فتحجب البديل — عطلٌ بلا مخرج."""
+    from daif import config
+
+    monkeypatch.setenv("DATABASE_URL", "railway")
+
+    assert config.discovered_database_url() == ""
+    assert config._database_url().startswith("sqlite")
+
+    problems = [p for p in preflight.check(production=True) if p.key == "DATABASE_URL"]
+    assert problems and "ليست عنوانًا" in problems[0].detail
 
 
 def test_the_length_is_always_reported(monkeypatch, no_database_env):
@@ -302,3 +330,14 @@ def test_the_specific_fix_wins_over_the_generic_one(monkeypatch, no_database_env
 
     html = preflight.diagnostic_html(problems)
     assert "كيف تربط قاعدة البيانات" in html, "عُرض الشرح العام بدل المفيد"
+
+
+def test_stray_whitespace_needs_no_recovery_at_all(monkeypatch, no_database_env):
+    """مسافة أو سطر جديد طرفي تُقصّ عند القراءة — لا عطل ولا انتشال."""
+    from daif import config
+
+    monkeypatch.setenv("DATABASE_URL", "  postgresql://u:p@h/d\n")
+
+    assert config.discovered_database_url() == "postgresql+psycopg://u:p@h/d"
+    assert not config.discover().recovered
+    assert not [p for p in preflight.check(production=True) if p.fatal]
