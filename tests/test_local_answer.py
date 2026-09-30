@@ -148,3 +148,40 @@ def test_an_ambiguous_question_defers_instead_of_guessing(kb):
 
 def test_normalisation_folds_arabic_indic_digits():
     assert "5" in la.normalize("الغرفة ٥٠٢")
+
+
+# --- المطابقة ككلمة، لا كجزء من كلمة ---
+
+
+def test_a_keyword_inside_another_word_does_not_match(ask):
+    """«نت» داخل «تنتهي» أعطت جواب الواي فاي لسؤال عن خدمة الغرف.
+
+    جوابٌ واثق وخاطئ أسوأ من تحويلٍ لموظف — وهذا أخطر ما في المطابقة
+    بالكلمات، فيُحرَس صراحةً.
+    """
+    result = ask("متى تنتهي خدمة الغرف")
+    assert "K01" not in result.reply.sources, "طابق «نت» داخل «تنتهي»"
+
+
+@pytest.mark.parametrize("question,expected", [
+    ("وش كلمة سر الواي فاي", "K01"),      # «ال» على أول كلمة في عبارة
+    ("بالمصعد وين", "K19"),                # سابقة «بال»
+    ("وين اصلي", "K15"),
+    ("فيه مويه باردة", "K14"),
+])
+def test_arabic_prefixes_do_not_block_a_match(ask, question, expected):
+    """«بالمصعد» و«مصعد» كلمة واحدة، و«الواي فاي» و«واي فاي» عبارة واحدة."""
+    assert expected in ask(question).reply.sources
+
+
+def test_coverage_of_everyday_questions(ask):
+    """قياسٌ صريح: انحدارٌ في التغطية يجب أن يُرى، لا أن يُكتشف من نزيل."""
+    questions = [
+        "وش كلمة سر الواي فاي؟", "متى الإفطار؟", "متى العشاء", "متى وقت الخروج؟",
+        "أقرب باب للحرم", "وين ألقى ماء زمزم", "وين أركن سيارتي", "وين اصلي",
+        "كم رقم تحويلة الاستقبال", "وين المصاعد", "المسبح للنساء؟",
+        "فيه كرسي متحرك؟", "الغسيل متى يرجع", "حفظ الشنط كم يكلف",
+        "تأخير الخروج كم يكلف", "كم سعر نقل المطار", "فيه قاعة اجتماعات",
+    ]
+    answered = [q for q in questions if ask(q).model == "knowledge_base"]
+    assert len(answered) >= 16, f"تراجعت التغطية: {len(answered)}/{len(questions)}"

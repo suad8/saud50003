@@ -91,11 +91,18 @@ def client(db):
 
 
 def test_the_dashboard_announces_it_on_every_screen(client):
-    """العطل صامت: كل شيء يعمل إلا الإجابة. فلا يُترك ليُكتشف من شكوى."""
+    """نقصٌ صامت: النظام يعمل ويبدو تامًّا. فلا يُترك ليُكتشف من شكوى."""
     for path in ("/", "/tickets", "/stays"):
-        assert "المساعد معطّل" in client.get(path).text, path
+        assert "المساعد يعمل جزئيًا" in client.get(path).text, path
 
 
 def test_setting_the_key_clears_it_without_a_restart(client, monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-real")
-    assert "المساعد معطّل" not in client.get("/").text
+    assert "المساعد يعمل جزئيًا" not in client.get("/").text
+
+
+def test_the_notice_does_not_overstate_the_damage(client):
+    """قاعدة المعرفة تجيب بلا مفتاح، فقول «كل سؤال يتحوّل» يُفزع بلا سبب."""
+    body = client.get("/").text
+    assert "كل سؤال يتحوّل" not in body
+    assert "قاعدة معرفتك" in body

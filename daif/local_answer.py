@@ -93,14 +93,17 @@ TOPIC_WORDS: dict[str, tuple[str, ...]] = {
                          "تسجيل الدخول", "وقت الدخول", "checkout", "checkin",
                          "check out", "check in", "الخروج", "الدخول"),
     "housekeeping": ("التنظيف", "تنظيف", "نظافه", "مناشف", "منشفه", "التدبير",
-                     "housekeeping", "شراشف", "وساده", "صابون"),
+                     "housekeeping", "شراشف", "وساده", "صابون", "خدمه الغرف",
+                     "خدمه الغرفه", "ترتيب الغرفه"),
     "laundry": ("غسيل", "الغسيل", "مغسله", "كوي", "laundry", "ملابس"),
     "luggage": ("الامتعه", "امتعه", "شنط", "الشنط", "حقايب", "luggage", "مستودع"),
     "airport_transfer": ("المطار", "مطار", "توصيله", "نقل", "سياره", "taxi",
                          "تاكسي", "airport"),
     "wheelchair": ("كرسي متحرك", "كرسي", "wheelchair", "عربيه"),
-    "zamzam": ("زمزم", "ماء زمزم", "zamzam", "ماي"),
-    "prayer_room": ("مصلى", "المصلى", "صلاه", "الصلاه", "prayer"),
+    "zamzam": ("زمزم", "ماء زمزم", "zamzam", "ماي", "مويه", "مياه", "شرب",
+               "برادات", "برداه"),
+    "prayer_room": ("مصلى", "المصلى", "صلاه", "الصلاه", "prayer", "اصلي",
+                    "نصلي", "سجاده", "قبله", "مسجد الفندق"),
     "parking": ("موقف", "المواقف", "مواقف", "باركنج", "parking", "سيارتي"),
     "late_checkout": ("تاخير الخروج", "تمديد", "خروج متاخر", "late checkout"),
     "reception": ("الاستقبال", "استقبال", "الريسبشن", "reception", "التحويله"),
@@ -119,16 +122,57 @@ def _defers(text: str) -> bool:
     return any(marker.strip().join((" ", " ")) in text for marker in _MARKERS)
 
 
+# سوابق تلتصق بالكلمة في العربية. بلا تجريدها لا تُطابَق «بالمصعد» كلمةَ
+# «مصعد»، ومع ذلك لا يجوز أن نطابق داخل الكلمة: «نت» في «تنتهي» أعطت جواب
+# الواي فاي لسؤال عن خدمة الغرف — جوابٌ واثق وخاطئ، وهو أسوأ ما في الباب.
+_PREFIXES = ("وال", "فال", "بال", "كال", "لل", "ال", "و", "ف", "ب", "ك", "ل")
+
+
+def _stem(token: str) -> str:
+    """الكلمة بعد تجريد سابقة واحدة إن بقي منها ما يكفي."""
+    for prefix in _PREFIXES:
+        if token.startswith(prefix) and len(token) - len(prefix) >= 3:
+            return token[len(prefix):]
+    return token
+
+
+def _variants(token: str) -> set[str]:
+    """الكلمة وما تبقّى منها بعد تجريد سابقة واحدة."""
+    return {token, _stem(token)}
+
+
+def tokens_of(message: str) -> set[str]:
+    """كلمات الرسالة وصورها المجرّدة من السوابق."""
+    found: set[str] = set()
+    for token in normalize(message).split():
+        found |= _variants(token)
+    return found
+
+
 def score_topics(message: str) -> dict[str, int]:
     """درجة كل موضوع في هذه الرسالة. الأطول أدلّ، فيأخذ وزنًا أكبر."""
     haystack = normalize(message)
+    # نصّ ثانٍ بكلمات مجرّدة من سوابقها، لتُطابَق العبارات أيضًا: «الواي فاي»
+    # تحمل «ال» على أول كلمتها، فلا تطابق عبارة «واي فاي» في النصّ الأصلي.
+    stemmed = " " + " ".join(_stem(t) for t in haystack.split()) + " "
+    words = tokens_of(message)
     scores: dict[str, int] = {}
-    for topic, words in TOPIC_WORDS.items():
+    for topic, keywords in TOPIC_WORDS.items():
         best = 0
-        for word in words:
-            needle = normalize(word).strip()
-            if needle and needle in haystack:
-                best = max(best, len(needle.split()) * 10 + len(needle))
+        for keyword in keywords:
+            needle = normalize(keyword).strip()
+            if not needle:
+                continue
+            parts = needle.split()
+            if len(parts) > 1:
+                # عبارة: تُطابَق بحدودها، في النصّ الأصلي أو المجرَّد.
+                boxed = f" {needle} "
+                hit = boxed in haystack or boxed in stemmed
+            else:
+                # كلمة واحدة: تُطابَق ككلمة لا كجزء من كلمة.
+                hit = needle in words
+            if hit:
+                best = max(best, len(parts) * 10 + len(needle))
         if best:
             scores[topic] = best
     return scores
