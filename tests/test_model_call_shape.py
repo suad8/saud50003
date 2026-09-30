@@ -27,11 +27,17 @@ def _reply() -> GuestReply:
                       request=None, handoff=None, confidence=0.9)
 
 
+# سؤالٌ لا تغطيه قاعدة المعرفة، فيصل النموذج فعلًا. «وش كلمة سر الواي فاي»
+# صارت تُجاب اقتباسًا بلا نداء — وهو المقصود، لكنه يُفرغ هذي الاختبارات.
+NEEDS_MODEL = "أبغى مناشف إضافية ووسادة لو سمحت"
+
+
 @pytest.fixture
 def sent(fake_reply, ctx, kb):
     """يشغّل المساعد ويعيد ما وصل العميل من وسائط."""
     client = fake_reply(_reply())
-    Assistant(client=client).reply(ctx=ctx, kb=kb, message="وش كلمة سر الواي فاي؟")
+    Assistant(client=client).reply(ctx=ctx, kb=kb, message=NEEDS_MODEL)
+    assert client.messages.calls, "لم يُستدعَ النموذج — السؤال أُجيب اقتباسًا"
     return client.messages.calls[-1]
 
 
@@ -51,7 +57,7 @@ def test_the_operating_context_still_reaches_the_model(sent):
 
 def test_the_guest_message_is_the_last_turn(sent):
     """السياق يسبق السؤال، فالسؤال هو آخر ما يقرؤه النموذج."""
-    assert sent["messages"][-1]["content"] == "وش كلمة سر الواي فاي؟"
+    assert sent["messages"][-1]["content"] == NEEDS_MODEL
 
 
 def test_the_cached_prefix_carries_no_per_request_context(sent):
@@ -72,8 +78,9 @@ def test_a_different_room_does_not_disturb_the_cached_prefix(fake_reply, ctx, kb
 
     client = fake_reply(_reply(), _reply())
     assistant = Assistant(client=client)
-    assistant.reply(ctx=ctx, kb=kb, message="أول")
-    assistant.reply(ctx=replace(ctx, room="511", guest_name="سارة"), kb=kb, message="ثاني")
+    assistant.reply(ctx=ctx, kb=kb, message=NEEDS_MODEL)
+    assistant.reply(ctx=replace(ctx, room="511", guest_name="سارة"), kb=kb,
+                    message=NEEDS_MODEL)
 
     first, second = client.messages.calls
     assert first["system"][0]["text"] == second["system"][0]["text"]
@@ -92,7 +99,7 @@ def test_the_failure_reason_carries_the_message(ctx, kb):
             def parse(**_kwargs):
                 raise TypeError("messages.1.role: Input should be 'user' or 'assistant'")
 
-    result = Assistant(client=Boom()).reply(ctx=ctx, kb=kb, message="مرحبا")
+    result = Assistant(client=Boom()).reply(ctx=ctx, kb=kb, message=NEEDS_MODEL)
 
     assert result.degraded
     detail = result.violations[0]

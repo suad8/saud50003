@@ -13,6 +13,7 @@ import anthropic
 from .config import Settings, get_settings
 from .context import GuestContext
 from .guardrails import GuardrailResult, enforce
+from . import local_answer
 from .knowledge import KnowledgeBase
 from .prompt import (
     build_cached_system,
@@ -139,6 +140,18 @@ class Assistant:
         # ١) الفحص المسبق للمواضيع الممنوعة — يشدّد فقط
         restricted = screen(message)
 
+        # ٢) الجواب الفوري من قاعدة المعرفة قبل أي نداء.
+        #
+        # «وش كلمة سر الواي فاي» جوابها مكتوب حرفيًا عندنا، والنموذج لا يفعل
+        # بها أكثر من إعادة ما أعطيناه إيّاه — بثانيتين وتكلفة. فنقتبسها هنا.
+        # والموضوع الممنوع يستثنى: فحصه يشدّد، فلا يجوز أن يتجاوزه اختصار.
+        if restricted is None:
+            local = local_answer.answer(
+                message, kb.active(ctx.now, ctx.season), language="ar"
+            )
+            if local is not None:
+                return self._from_knowledge(local, started)
+
         facts_block = kb.render(ctx.now, ctx.season)
         system_text = build_cached_system(
             ctx.hotel_name, facts_block, template=self._template, group_mode=ctx.group_mode
@@ -172,6 +185,24 @@ class Assistant:
             latency_ms=int((time.monotonic() - started) * 1000),
             model=self.settings.model,
             request_id=request_id,
+        )
+
+    # ------------------------------------------------------------------
+    def _from_knowledge(self, local, started: float) -> AssistantResult:
+        """جواب مقتبس حرفيًا — بلا نموذج، فلا تُحتسب له توكِنات ولا كلفة.
+
+        `degraded` تبقى False: هذا ليس تنازلًا عن جودة بل المسار المقصود.
+        والمصدر يُسجَّل كما يُسجَّل لأي جواب، فتبقى كل إجابة قابلة للتتبّع.
+        """
+        return AssistantResult(
+            reply=GuestReply(
+                intent="inquiry", in_scope=True, language="ar",
+                answer=local.text, sources=local.fact_key.split("، "),
+                request=None, handoff=None, confidence=1.0,
+            ),
+            latency_ms=int((time.monotonic() - started) * 1000),
+            model="knowledge_base",
+            usage=Usage(),
         )
 
     # ------------------------------------------------------------------

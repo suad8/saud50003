@@ -41,8 +41,12 @@ def test_building_a_client_without_a_key_says_what_to_do():
 
 
 def test_a_guest_message_degrades_with_a_readable_reason(ctx, kb):
-    """النزيل يُحوَّل للاستقبال — وهو الصواب — واللوحة تقول لماذا."""
-    result = Assistant().reply(ctx=ctx, kb=kb, message="وش كلمة سر الواي فاي؟")
+    """النزيل يُحوَّل للاستقبال — وهو الصواب — واللوحة تقول لماذا.
+
+    والسؤال طلبُ خدمة عمدًا: أسئلة المعلومات تُجاب من قاعدة المعرفة بلا
+    نموذج، فلا تكشف غياب المفتاح.
+    """
+    result = Assistant().reply(ctx=ctx, kb=kb, message="أبغى مناشف إضافية")
 
     assert result.degraded
     assert "ANTHROPIC_API_KEY" in result.violations[0]
@@ -55,7 +59,8 @@ def test_an_explicit_client_still_works_without_the_env(fake_reply, ctx, kb):
 
     client = fake_reply(GuestReply(intent="inquiry", in_scope=True, language="ar",
                                    answer="نعم.", sources=["K01"], confidence=0.9))
-    assert not Assistant(client=client).reply(ctx=ctx, kb=kb, message="سؤال").degraded
+    assert not Assistant(client=client).reply(
+        ctx=ctx, kb=kb, message="أبغى مناشف إضافية").degraded
 
 
 # --- الإعلان في اللوحة ---
