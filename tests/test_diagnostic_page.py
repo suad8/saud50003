@@ -239,3 +239,48 @@ def test_the_fix_text_shows_the_reference_without_spaces(monkeypatch, no_databas
     html = preflight.diagnostic_html(preflight.check(production=True))
     assert "${{Postgres.DATABASE_URL}}" in html
     assert "${{ Postgres.DATABASE_URL }}" not in html
+
+
+# --- وصف قيمة لا تُقرأ، بلا كشف كلمة المرور ---
+
+
+def test_the_description_never_prints_the_password(monkeypatch, no_database_env):
+    """صفحة تشخيص مكشوفة للعالم — تسريب كلمة مرور القاعدة أسوأ من أي عطل."""
+    secret = "Tr0ub4dor-CorrectHorse"
+    monkeypatch.setenv("DATABASE_URL", f'"postgresql://u:{secret}@h:5432/d"')
+
+    html = preflight.diagnostic_html(preflight.check(production=True))
+    assert secret not in html
+    assert "علامات اقتباس" in html
+
+
+def test_a_bare_value_with_no_scheme_is_not_echoed_at_all(monkeypatch, no_database_env):
+    """قيمة بلا «://» قد تكون كلمة المرور وحدها لُصقت في الخانة."""
+    monkeypatch.setenv("DATABASE_URL", "hunter2-the-actual-password")
+
+    html = preflight.diagnostic_html(preflight.check(production=True))
+    assert "hunter2" not in html
+    assert "ليست عنوانًا" in html
+
+
+@pytest.mark.parametrize("value,expected", [
+    ('"postgresql://u:p@h:5432/d"', "علامات اقتباس"),
+    ("DATABASE_URL=postgresql://u:p@h/d", "لصقت السطر كاملًا"),
+    ("postgres.railway.internal", "ليست عنوانًا"),
+])
+def test_each_common_mistake_names_itself(monkeypatch, no_database_env, value, expected):
+    """التخمين يكلّف جولة نشر كاملة في كل مرة."""
+    monkeypatch.setenv("DATABASE_URL", value)
+
+    problems = [p for p in preflight.check(production=True)
+                if p.key == "DATABASE_URL" and p.fatal]
+    assert problems and expected in problems[0].detail
+
+
+def test_the_length_is_always_reported(monkeypatch, no_database_env):
+    """الطول وحده يكشف قيمة مبتورة أو فيها محارف غير مرئية."""
+    monkeypatch.setenv("DATABASE_URL", "not-a-url")
+
+    problems = [p for p in preflight.check(production=True)
+                if p.key == "DATABASE_URL" and p.fatal]
+    assert "طولها 9 محرفًا" in problems[0].detail
