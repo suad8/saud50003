@@ -295,6 +295,9 @@ def setup(templates) -> APIRouter:
         guest = _guest_of(db, visit.tenant.id, stay)
         lang = request.cookies.get("daif_lang", "") or guest.language
         guest.language = lang
+        # من كتب للتو يصعد أول قائمة المحادثات. بلا هذا بقي في مكانه، وفتحت
+        # الشاشة محادثة نزيلٍ آخر — فردّ الموظف على غير من سأله.
+        guest.last_seen_at = now_riyadh()
 
         inbound = Message(tenant_id=visit.tenant.id, guest_id=guest.id,
                           direction="in", text=text, language=lang)

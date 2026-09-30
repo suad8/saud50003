@@ -10,6 +10,12 @@
   .thread-ctx.done{background:transparent; border-color:var(--line)}
   .thread-ctx p{line-height:1.6}
   .ctx-act{flex:none}
+  .reply-box{display:flex; gap:10px; align-items:flex-end; padding:14px 16px;
+    border-top:1px solid var(--line)}
+  .reply-box textarea{flex:1; resize:vertical; min-height:46px; font:inherit;
+    padding:11px 13px; border-radius:12px; border:1px solid var(--line);
+    background:var(--bg); color:inherit}
+  .reply-box .btn{flex:none; min-height:46px}
 {% endblock %}
 
 {% block content %}
@@ -94,6 +100,16 @@
       </div>
       {% else %}<div class="empty">{{ t('no_data') }}</div>{% endif %}
     </div>
+    {% if selected %}
+    {# صندوق الردّ. المسار كان موجودًا في الخادم منذ البداية، ولم يكن في
+       الشاشة ما يوصل إليه — فكانت المحادثة تُقرأ ولا يُردّ عليها. #}
+    <form method="post" action="/conversations/{{ selected.id }}/reply" class="reply-box">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <textarea name="text" rows="2" maxlength="1000" required autofocus
+                placeholder="اكتب ردّك للنزيل…"></textarea>
+      <button class="btn primary" type="submit">إرسال</button>
+    </form>
+    {% endif %}
   </section>
 </div>
 {% endblock %}

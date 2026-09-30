@@ -856,7 +856,11 @@ def conversation_reply(
             HandoffRecord.status == "open",
         )
     ).all():
-        row.status = "closed"
+        # «resolved» لا «closed»: الحالة المعتمدة للتحويل open|resolved. قيمةٌ
+        # خارجها كانت تُبقي زرّ الإغلاق ظاهرًا في بطاقة المحادثة بعد الردّ.
+        row.status = "resolved"
+        row.resolved_by = principal.user.email
+        row.resolved_at = now_riyadh()
     session.commit()
     return RedirectResponse(f"/conversations?guest={guest_id}", status_code=303)
 

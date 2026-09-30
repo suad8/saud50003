@@ -166,7 +166,8 @@ def seed(session, *, hotel: str = DEFAULT_HOTEL, slug: str = DEFAULT_SLUG,
     ]
     for index, (room, ty, detail, urg, status, script) in enumerate(threads):
         guest = Guest(tenant_id=tenant.id, wa_id=f"demo:{room}", room=room,
-                      language="ar")
+                      language="ar",
+                      last_seen_at=now - timedelta(minutes=(len(threads) - index) * 12))
         session.add(guest)
         session.flush()
         last = None
@@ -186,7 +187,7 @@ def seed(session, *, hotel: str = DEFAULT_HOTEL, slug: str = DEFAULT_SLUG,
 
     # تحويل واحد مفتوح: شكوى لا يجوز للمساعد أن يجيب عنها، فتنتظر إنسانًا.
     complainant = Guest(tenant_id=tenant.id, wa_id="demo:608", room="608",
-                        language="ar")
+                        language="ar", last_seen_at=now - timedelta(minutes=6))
     session.add(complainant)
     session.flush()
     grievance = "الغرفة اللي وصلتني مو اللي حجزتها، وأبغى أكلم المسؤول"

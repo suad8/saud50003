@@ -117,3 +117,19 @@ document.addEventListener("click", function (e) {
   beat();
   schedule();
 })();
+
+// --- صندوق الردّ على النزيل ---
+// Enter يرسل وShift+Enter سطر جديد، كما في كل تطبيق محادثة. وهنا لا في
+// القالب: سياسة المحتوى تمنع السكربت المضمَّن، فكان سيُهمَل بصمت.
+(function () {
+  var box = document.querySelector(".reply-box textarea");
+  if (!box) return;
+  box.addEventListener("keydown", function (e) {
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+      e.preventDefault();
+      if (box.value.trim()) box.form.requestSubmit();
+    }
+  });
+  var log = document.querySelector(".card-body .stack");
+  if (log && log.lastElementChild) log.lastElementChild.scrollIntoView({ block: "end" });
+})();
