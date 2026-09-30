@@ -24,6 +24,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from .. import apikeys, authz, features, secrets_store, tick
+from .. import assistant as assistant_mod
 from ..assistant import Assistant
 from ..clock import now_riyadh, parse_date
 from ..config import get_settings
@@ -83,6 +84,8 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 # مفتاح عام لكل القوالب: يُقرأ عند كل عرض لا مرة واحدة عند الإقلاع، فقلبه
 # يسري بلا إعادة تشغيل.
 templates.env.globals["show_billing"] = features.SHOW_BILLING_FLAG
+# يُقرأ عند كل عرض: ضبط المفتاح يزيل الإنذار بلا إعادة تشغيل.
+templates.env.globals["model_key_set"] = features._Flag(assistant_mod.model_key_set)
 
 # اعتمادية CSRF تُطبَّق على كل المسارات؛ تتجاهل الآمنة منها والـwebhook.
 app = FastAPI(

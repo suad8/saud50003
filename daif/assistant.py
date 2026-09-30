@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import logging
 import time
 from dataclasses import dataclass, field
@@ -21,6 +22,21 @@ from .restricted import RestrictedMatch, screen
 from .schema import GuestReply, safe_handoff
 
 logger = logging.getLogger("daif.assistant")
+
+KEY_ENV = "ANTHROPIC_API_KEY"
+
+
+def model_key_set() -> bool:
+    """هل يوجد مفتاح نموذج صالح؟
+
+    «موجود بقيمة فارغة» حالةٌ تقع فعلًا: لوحات الاستضافة تنشئ المتغيّر ثم
+    يُنسى ملؤه. فالفحص على القيمة بعد التشذيب لا على وجود الاسم.
+    """
+    return bool(os.environ.get(KEY_ENV, "").strip())
+
+
+class MissingModelKey(RuntimeError):
+    """المفتاح غائب — عطل إعداد لا عطل نموذج، ورسالته تقول ذلك."""
 
 
 @dataclass
@@ -73,6 +89,14 @@ class Assistant:
     def client(self) -> Any:
         """يُنشأ العميل عند أول استعمال حتى لا تحتاج الاختبارات مفتاحًا."""
         if self._client is None:
+            if not model_key_set():
+                # بلا هذا الفحص ترتدّ رسالة المكتبة الخام في وجه الموظف:
+                # «Could not resolve authentication method…» — صحيحة ولا
+                # تقول أين المفتاح ولا مَن يضبطه.
+                raise MissingModelKey(
+                    "مفتاح النموذج غير مضبوط. أضف ANTHROPIC_API_KEY بقيمته "
+                    "في إعدادات الاستضافة ثم أعد النشر."
+                )
             self._client = anthropic.Anthropic(timeout=self.settings.request_timeout)
         return self._client
 

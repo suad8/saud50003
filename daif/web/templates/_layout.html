@@ -62,6 +62,17 @@
       {% if self.subtitle() | trim %}<div class="sub">{% block subtitle %}{% endblock %}</div>{% endif %}
     </header>
     <div class="content">
+      {% if not model_key_set %}
+      {# بلا مفتاح النموذج يعمل كل شيء ويبدو سليمًا — إلا أن المساعد لا يجيب
+         عن شيء ويحوّل كل سؤال لموظف. عطلٌ صامت يُكتشف من شكوى نزيل بعد
+         أسبوع، فيُعلَن هنا على كل شاشة حتى يُضبط. #}
+      <div class="alert warn" role="alert">
+        <strong>المساعد معطّل:</strong> مفتاح النموذج غير مضبوط، فكل سؤال
+        يتحوّل للاستقبال بدل أن يُجاب. أضف
+        <code dir="ltr">ANTHROPIC_API_KEY</code> <b>بقيمته</b> في إعدادات
+        الاستضافة ثم أعد النشر. (اسمٌ بقيمة فارغة لا يكفي.)
+      </div>
+      {% endif %}
       {% if flash %}<div class="alert {{ flash_kind or 'ok' }}">{{ flash }}</div>{% endif %}
       {% block content %}{% endblock %}
     </div>
