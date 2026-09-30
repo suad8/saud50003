@@ -131,14 +131,21 @@ def test_history_excludes_the_current_message(db, hotel, fake_reply):
     handle_inbound(db, hotel, wa_id="966500000001", text="سؤال ثانٍ", assistant=assistant)
 
     first, second = client.messages.calls
-    assert [m["role"] for m in first["messages"]] == ["user", "system"]
-    assert [m["role"] for m in second["messages"]] == ["user", "assistant", "user", "system"]
+    # السياق التشغيلي دورُه «user» — واجهة الرسائل لا تقبل «system» هنا.
+    assert [m["role"] for m in first["messages"]] == ["user", "user"]
+    assert [m["role"] for m in second["messages"]] == [
+        "user", "assistant", "user", "user"]
     # لا تكرار لرسالة النزيل الحالية
     assert [m["content"] for m in second["messages"]].count("سؤال ثانٍ") == 1
 
 
-def test_operating_context_travels_on_the_operator_channel(db, hotel, fake_reply):
-    """قيم السياق تصل عبر رسالة مشغّل، لا داخل نص النزيل."""
+def test_operating_context_travels_in_its_own_turn(db, hotel, fake_reply):
+    """قيم السياق تصل في دور مستقلّ، لا داخل نص النزيل ولا في بادئة مخزَّنة.
+
+    كان دور هذا الطور «system»، وهو مرفوض داخل `messages` فتردّ الواجهة ٤٠٠
+    على كل رسالة — ويعمل النظام كله في الوضع الاحتياطي. وكان هذا الاختبار
+    يثبّت العطل بدل أن يكشفه.
+    """
     client = fake_reply(
         GuestReply(intent="inquiry", in_scope=True, language="ar", answer="نعم.",
                    sources=["K01"], confidence=0.9)
@@ -147,10 +154,13 @@ def test_operating_context_travels_on_the_operator_channel(db, hotel, fake_reply
     handle_inbound(db, hotel, wa_id="966500000001", text="سؤال",
                    assistant=Assistant(client=client))
     call = client.messages.calls[0]
-    operator = call["messages"][-1]
-    assert operator["role"] == "system"
-    assert "Guest room:          402" in operator["content"]
+    context, guest_turn = call["messages"]
+    assert context["role"] == "user" and guest_turn["role"] == "user"
+    assert "Guest room:          402" in context["content"]
+    assert guest_turn["content"] == "سؤال"
+    # البادئة تبقى مخزَّنة: السياق المتغيّر خارجها.
     assert "cache_control" in call["system"][0]
+    assert "Guest room:" not in call["system"][0]["text"]
 
 
 def test_handoff_records_the_guest_question_for_gap_analysis(db, hotel, fake_reply):

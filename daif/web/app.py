@@ -23,7 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
-from .. import apikeys, authz, features, secrets_store
+from .. import apikeys, authz, features, secrets_store, tick
 from ..assistant import Assistant
 from ..clock import now_riyadh, parse_date
 from ..config import get_settings
@@ -166,6 +166,9 @@ def _startup() -> None:
     # قبل أول طلب: الحفظ أثناء طلب يفتح اتصالًا ثانيًا ومعاملته قائمة.
     secrets_store.warm()
     _bootstrap_admin()
+    if tick.enabled():
+        tick.start_background(session_scope)
+        logger.info("المجدول الداخلي يعمل كل %d ثانية.", tick.INTERVAL)
 
 
 @app.middleware("http")

@@ -57,6 +57,9 @@ class Tenant(Base):
     # كيف يثبت النزيل أنه في الغرفة أول مرة: stay_code | phone_last4 | desk_arm.
     # المبدئي هو الكود المطبوع — يموت مع الإقامة ولا يسأل النزيل شيئًا يحفظه.
     access_mode: Mapped[str] = mapped_column(String(16), default="stay_code")
+    # تذكير المغادرة: كم ساعة قبلها يُرسَل. صفر = مطفأ. الافتراضي ثلاث ساعات
+    # — وقتٌ يكفي لترتيب الأمتعة وطلب تمديد، ولا يبكّر فيُنسى.
+    checkout_reminder_hours: Mapped[int] = mapped_column(Integer, default=3)
     ramadan_start: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     ramadan_end: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     hajj_start: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
@@ -431,6 +434,11 @@ class Stay(Base):
 
     # نافذة التفعيل في وضع «الاستقبال يفعّل الغرفة»: أول مسح داخلها يربط بلا سؤال.
     armed_until: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # متى أُرسل تذكير المغادرة. وجوده يمنع الإرسال ثانيةً — المجدول يمرّ كل
+    # بضع دقائق، وبلا هذا الحقل يصير التذكير سيلًا لا تذكيرًا.
+    reminder_sent_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True)
 
     devices: Mapped[list["StayDevice"]] = relationship(
         back_populates="stay", cascade="all, delete-orphan", lazy="selectin"

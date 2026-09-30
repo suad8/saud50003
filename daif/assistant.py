@@ -15,7 +15,6 @@ from .guardrails import GuardrailResult, enforce
 from .knowledge import KnowledgeBase
 from .prompt import (
     build_cached_system,
-    build_inline_system,
     render_operating_context,
 )
 from .restricted import RestrictedMatch, screen
@@ -120,22 +119,18 @@ class Assistant:
         system_text = build_cached_system(
             ctx.hotel_name, facts_block, template=self._template, group_mode=ctx.group_mode
         )
+        # السياق التشغيلي في دور «user» لا «system». واجهة الرسائل لا تقبل
+        # في `messages` إلا user وassistant، فدور system هناك يُرفض بـ400 —
+        # وكان يُرفض في كل رسالة، فيعمل النظام كله في الوضع الاحتياطي.
+        #
+        # ووضعه هنا لا داخل البرومبت مقصود: البرومبت هو البادئة المخزَّنة
+        # مؤقتًا، وحشو الوقت والغرفة فيه يُبطل التخزين مع كل رسالة.
         turns: list[dict] = list(history or [])
+        turns.append({"role": "user", "content": render_operating_context(ctx)})
         turns.append({"role": "user", "content": message})
-        turns.append({"role": "system", "content": render_operating_context(ctx)})
 
         try:
             raw, usage, request_id = self._call(system_text, turns)
-        except _OperatorChannelUnsupported:
-            # النموذج لا يقبل رسائل المشغّل — نضع السياق داخل البرومبت
-            logger.warning("رسائل المشغّل غير مدعومة؛ الرجوع لوضع السياق داخل البرومبت")
-            inline = build_inline_system(
-                ctx.hotel_name, facts_block, ctx, template=self._template
-            )
-            try:
-                raw, usage, request_id = self._call(inline, turns[:-1])
-            except Exception as exc:  # noqa: BLE001
-                return self._failure(exc, restricted, started)
         except Exception as exc:  # noqa: BLE001
             return self._failure(exc, restricted, started)
 
@@ -160,27 +155,22 @@ class Assistant:
         self, system_text: str, turns: list[dict]
     ) -> tuple[GuestReply, Usage, str | None]:
         """نداء واحد للنموذج بمخرجات منظّمة إلزاميًا."""
-        try:
-            response = self.client.messages.parse(
-                model=self.settings.model,
-                max_tokens=self.settings.max_tokens,
-                # البادئة الثابتة تُخزَّن مؤقتًا: القواعد وقاعدة المعرفة لا تتغير
-                # بين الرسائل، فلا يُدفع ثمنها في كل مرة.
-                system=[
-                    {
-                        "type": "text",
-                        "text": system_text,
-                        "cache_control": {"type": "ephemeral"},
-                    }
-                ],
-                messages=turns,
-                output_format=GuestReply,
-                output_config={"effort": self.settings.effort},
-            )
-        except anthropic.BadRequestError as exc:
-            if "system" in str(exc).lower() and "role" in str(exc).lower():
-                raise _OperatorChannelUnsupported from exc
-            raise
+        response = self.client.messages.parse(
+            model=self.settings.model,
+            max_tokens=self.settings.max_tokens,
+            # البادئة الثابتة تُخزَّن مؤقتًا: القواعد وقاعدة المعرفة لا تتغير
+            # بين الرسائل، فلا يُدفع ثمنها في كل مرة.
+            system=[
+                {
+                    "type": "text",
+                    "text": system_text,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ],
+            messages=turns,
+            output_format=GuestReply,
+            output_config={"effort": self.settings.effort},
+        )
 
         parsed = response.parsed_output
         if parsed is None:
@@ -206,12 +196,20 @@ class Assistant:
             note = f"{restricted.note} — يحتاج موظفًا"
         return AssistantResult(
             reply=safe_handoff("low_confidence", note=note),
-            violations=[f"عطل في النموذج: {type(exc).__name__}"],
+            # اسم الصنف وحده لا يكفي: «TypeError» بلا رسالة كلّف جولات تشخيص
+            # طويلة. اللوحة للموظف لا للنزيل، فالتفصيل هنا في محلّه.
+            violations=[f"عطل في النموذج: {_reason(exc)}"],
             restricted=restricted,
             latency_ms=int((time.monotonic() - started) * 1000),
             degraded=True,
         )
 
 
-class _OperatorChannelUnsupported(Exception):
-    """النموذج لا يدعم رسائل المشغّل داخل messages."""
+def _reason(exc: Exception, limit: int = 200) -> str:
+    """اسم العطل ورسالته، مقصوصة. بلا الرسالة يستحيل التشخيص عن بُعد."""
+    detail = " ".join(str(exc).split())
+    if len(detail) > limit:
+        detail = detail[: limit - 1] + "…"
+    return f"{type(exc).__name__}: {detail}" if detail else type(exc).__name__
+
+

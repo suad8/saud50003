@@ -158,6 +158,19 @@ def cmd_import_kb(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_tick(args: argparse.Namespace) -> int:
+    """مرور واحد على العمل الدوري — لمجدول المنصّة أو للتشخيص باليد."""
+    from . import tick
+
+    init_db()
+    with session_scope() as session:
+        report = tick.run_once(session)
+    print(f"› {report}")
+    for line in report.errors:
+        print(f"  ‼ {line}")
+    return 1 if report.errors else 0
+
+
 def cmd_serve(args: argparse.Namespace) -> int:
     import uvicorn
 
@@ -305,6 +318,8 @@ def build_parser() -> argparse.ArgumentParser:
     off = sub.add_parser("demo-off", help="إطفاء وضع العرض وتغيير كلمات المرور المعلَنة")
     off.add_argument("--password", default="", help="كلمة المرور الجديدة (وإلا تُطلب تفاعليًا)")
     off.set_defaults(func=cmd_demo_off)
+
+    sub.add_parser("tick", help="مرور واحد على العمل الدوري (طيّ وتذكير)").set_defaults(func=cmd_tick)
 
     serve = sub.add_parser("serve", help="تشغيل الخادم")
     serve.add_argument("--host", default="127.0.0.1")
