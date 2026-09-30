@@ -58,3 +58,24 @@ def mask(raw: str) -> str:
     if len(digits) <= 4:
         return digits
     return "•" * (len(digits) - 4) + digits[-4:]
+
+
+def display(normalized: str) -> str:
+    """الرقم كما يقرؤه موظف الاستقبال: ٠٥٣ ٢٢١ ٢٥٢٩ لا 966532212529.
+
+    الجوال السعودي يُكتب محلّيًّا لأنه ما سيطلبه الموظف من هاتف الفندق، وما
+    عداه يُكتب دوليًّا بعلامة + لأن الرقم الأجنبي بلا رمز دولته لا يُطلب.
+    """
+    digits = _DIGITS.sub("", normalized or "")
+    if not digits:
+        return ""
+    if digits.startswith(DEFAULT_CC + "5") and len(digits) == len(DEFAULT_CC) + 9:
+        local = "0" + digits[len(DEFAULT_CC):]
+        return f"{local[:3]} {local[3:6]} {local[6:]}"
+    return "+" + digits
+
+
+def tel(normalized: str) -> str:
+    """رابط الاتصال — بصيغة دولية دائمًا، فيعمل من أي هاتف."""
+    digits = _DIGITS.sub("", normalized or "")
+    return f"tel:+{digits}" if digits else ""

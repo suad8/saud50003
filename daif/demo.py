@@ -136,12 +136,25 @@ def seed(session, *, hotel: str = DEFAULT_HOTEL, slug: str = DEFAULT_SLUG,
     today = now_riyadh().date()
     # أرقام يسهل كتابتها في العرض: الجوال هو مفتاح الدخول الآن، فالمجرِّب
     # يحتاج رقمًا يتذكّره لا رمزًا يبحث عنه.
+    #
+    # ولكل محادثة في العرض إقامة حقيقية باسم وجوال: شاشة المحادثات تعرض من
+    # يكلّمه الموظف، ومحادثةٌ بلا إقامة تظهر «نزيل غرفة ٣١٨» بلا اسم ولا رقم —
+    # فتبدو ناقصة في العرض نفسه الذي يُفترض أن يبيّنها.
+    #
+    # والأولى (٤٠٢) بلا محادثة سابقة عمدًا: رقمها يظهر على الباب للتجربة،
+    # فيدخل المجرِّب على شات نظيف لا على محادثة غيره.
     codes: list[tuple[str, str]] = []
+    stay_in: dict[str, object] = {}
     for room, name, phone in [("402", "أحمد الغامدي", "0500000001"),
                               ("318", "محمد أسلم", "0500000002"),
-                              ("215", "Siti Rahayu", "0500000003")]:
-        stay_mod.open_stay(session, tenant.id, room, guest_name=name,
-                           phone=phone, checkout_on=today + timedelta(days=3))
+                              ("215", "Siti Rahayu", "0500000003"),
+                              ("512", "خالد الحربي", "0500000004"),
+                              ("407", "فاطمة الزهراني", "0500000005"),
+                              ("233", "عبدالله القحطاني", "0500000006"),
+                              ("608", "نورة السبيعي", "0500000007")]:
+        stay_in[room] = stay_mod.open_stay(
+            session, tenant.id, room, guest_name=name, phone=phone,
+            checkout_on=today + timedelta(days=3))
         codes.append((room, phone))
 
     enable(session, platform_email=platform_email, staff_email=staff_email,
@@ -165,8 +178,11 @@ def seed(session, *, hotel: str = DEFAULT_HOTEL, slug: str = DEFAULT_SLUG,
           ("out", "تم الإصلاح، جرّبه الحين ولو بقي شي كلّمنا.")]),
     ]
     for index, (room, ty, detail, urg, status, script) in enumerate(threads):
-        guest = Guest(tenant_id=tenant.id, wa_id=f"demo:{room}", room=room,
-                      language="ar",
+        # المعرّف نفسه الذي تشتقّه صفحة النزيل من إقامته — فالمحادثة تُعرف
+        # في اللوحة باسم صاحبها، ويجدها هو في شاته إن دخل بجواله.
+        stay = stay_in[room]
+        guest = Guest(tenant_id=tenant.id, wa_id=f"web:{stay.id}", room=room,
+                      name=stay.guest_name, language="ar",
                       last_seen_at=now - timedelta(minutes=(len(threads) - index) * 12))
         session.add(guest)
         session.flush()
@@ -186,8 +202,9 @@ def seed(session, *, hotel: str = DEFAULT_HOTEL, slug: str = DEFAULT_SLUG,
                            status=status, created_at=now))
 
     # تحويل واحد مفتوح: شكوى لا يجوز للمساعد أن يجيب عنها، فتنتظر إنسانًا.
-    complainant = Guest(tenant_id=tenant.id, wa_id="demo:608", room="608",
-                        language="ar", last_seen_at=now - timedelta(minutes=6))
+    complainant = Guest(tenant_id=tenant.id, wa_id=f"web:{stay_in['608'].id}",
+                        room="608", name=stay_in["608"].guest_name, language="ar",
+                        last_seen_at=now - timedelta(minutes=6))
     session.add(complainant)
     session.flush()
     grievance = "الغرفة اللي وصلتني مو اللي حجزتها، وأبغى أكلم المسؤول"

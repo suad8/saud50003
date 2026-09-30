@@ -58,6 +58,7 @@ from ..repository import (
     expiring_facts,
     conversation_history,
     get_tenant,
+    guest_cards,
     knowledge_gaps,
     list_facts,
     list_guests,
@@ -793,6 +794,7 @@ def conversations_page(
     return _render(
         request, session, principal, "conversations.html", "conversations",
         guests=guests, selected=selected, messages=messages,
+        cards=guest_cards(session, principal.tenant.id, guests),
         # القادم من تذكرة أو تحويل يحمل سببه معه: يردّ ويغلق من شاشة واحدة
         # بدل أن يرجع لقائمة ويبحث عن السطر الذي جاء منه.
         context=_thread_context(session, principal.tenant.id, ticket, handoff),

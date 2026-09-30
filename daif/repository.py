@@ -208,6 +208,72 @@ def get_or_create_guest(session: Session, tenant_id: int, wa_id: str) -> Guest:
     return guest
 
 
+def guest_cards(session: Session, tenant_id: int,
+                guests: list[Guest]) -> dict[int, dict]:
+    """اسم النزيل وجواله وغرفته وحال إقامته، لكل محادثة.
+
+    الجوال لا يُخزَّن على النزيل بل على الإقامة، والمحادثة مربوطة بها عبر
+    المعرّف «web:<رقم الإقامة>». وكانت الشاشة لا تربط بينهما، فيرى الموظف
+    «web:4» — رقمًا داخليًّا لا يعني له شيئًا — ولا يرى اسم من يكلّمه.
+
+    استعلام واحد لكل الإقامات لا استعلامٌ لكل محادثة: القائمة قد تبلغ مئتين.
+
+    ولا تخمين بالغرفة: محادثة لا تُعرف إقامتها لا تُنسب لنزيل الغرفة الحالي،
+    فذاك يُظهر اسم شخصٍ وجواله على محادثة شخصٍ آخر.
+    """
+    from . import phones
+    from .models import Stay
+
+    stay_of: dict[int, int] = {}
+    for guest in guests:
+        if guest.wa_id.startswith("web:"):
+            try:
+                stay_of[guest.id] = int(guest.wa_id[4:])
+            except ValueError:
+                pass
+
+    stays = {}
+    if stay_of:
+        stays = {
+            stay.id: stay for stay in session.scalars(
+                select(Stay).where(Stay.tenant_id == tenant_id,
+                                   Stay.id.in_(set(stay_of.values())))
+            )
+        }
+
+    now = now_riyadh()
+    cards: dict[int, dict] = {}
+    for guest in guests:
+        stay = stays.get(stay_of.get(guest.id, -1))
+        # قناة واتساب: المعرّف هو الجوال نفسه.
+        phone = stay.phone_norm if stay is not None else (
+            guest.wa_id if guest.wa_id.isdigit() else "")
+        room = (stay.room if stay is not None else "") or guest.room or ""
+        name = ((stay.guest_name if stay is not None else "") or guest.name or "").strip()
+
+        status, until = "", ""
+        if stay is not None:
+            from .stay import CHECKOUT_GRACE, _aware
+
+            expires = _aware(stay.expires_at)
+            if stay.status == "open" and expires > now:
+                status = "staying"
+                until = (expires - CHECKOUT_GRACE).strftime("%m-%d %H:%M")
+            else:
+                status = "left"
+
+        cards[guest.id] = {
+            "name": name or (f"نزيل غرفة {room}" if room else "نزيل"),
+            "named": bool(name),
+            "room": room,
+            "phone": phones.display(phone),
+            "tel": phones.tel(phone),
+            "status": status,
+            "until": until,
+        }
+    return cards
+
+
 def list_guests(session: Session, tenant_id: int, limit: int = 200) -> list[Guest]:
     return list(
         session.scalars(

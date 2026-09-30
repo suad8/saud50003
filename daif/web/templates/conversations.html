@@ -10,6 +10,14 @@
   .thread-ctx.done{background:transparent; border-color:var(--line)}
   .thread-ctx p{line-height:1.6}
   .ctx-act{flex:none}
+  .guest-head{align-items:flex-start; gap:12px}
+  .guest-head h2{margin:0 0 6px}
+  .guest-facts{display:flex; flex-wrap:wrap; gap:8px 16px; font-size:.9rem; color:var(--text-muted)}
+  .guest-facts .fact{white-space:nowrap}
+  .guest-facts a.fact{color:var(--accent); text-decoration:none}
+  .guest-facts a.fact:hover{text-decoration:underline}
+  a.is-open .cell-main{color:var(--accent)}
+  .left-tag{font-size:.7rem; font-weight:600; color:var(--amber); margin-inline-start:6px}
   .reply-box{display:flex; gap:10px; align-items:flex-end; padding:14px 16px;
     border-top:1px solid var(--line)}
   .reply-box textarea{flex:1; resize:vertical; min-height:46px; font:inherit;
@@ -28,12 +36,16 @@
         {% for g in guests %}
         <tr>
           <td>
-            <a href="/conversations?guest={{ g.id }}" style="display:block">
-              <div class="cell-main mono">{{ g.wa_id }}</div>
+            {% set c = cards[g.id] %}
+            <a href="/conversations?guest={{ g.id }}" style="display:block"
+               class="{{ 'is-open' if selected and selected.id == g.id }}">
+              <div class="cell-main">{{ c.name }}
+                {% if c.status == 'left' %}<span class="left-tag">غادر</span>{% endif %}
+              </div>
               <div class="cell-sub">
-                {{ g.name or '—' }}
-                {% if g.room %}· {{ t('room') }} {{ g.room }}
-                {% else %}· <span style="color:var(--amber)">{{ t('reason_unverified_room') }}</span>{% endif %}
+                {% if c.room %}{{ t('room') }} {{ c.room }}{% endif %}
+                {% if c.room and c.phone %} · {% endif %}
+                {% if c.phone %}<span dir="ltr">{{ c.phone }}</span>{% endif %}
               </div>
             </a>
           </td>
@@ -45,9 +57,27 @@
   </section>
 
   <section class="card">
-    <div class="card-head">
-      <h2>{{ selected.wa_id if selected else t('message') }}</h2>
-      {% if selected %}<span class="badge">{{ t('room') }} {{ selected.room or '—' }}</span>{% endif %}
+    <div class="card-head guest-head">
+      {% if selected %}
+      {% set c = cards[selected.id] %}
+      {# من يكلّمه الموظف: اسمه وغرفته وجواله. كان هنا «web:4» — معرّفٌ
+         داخلي لا يعني لموظف الاستقبال شيئًا. #}
+      <div>
+        <h2>{{ c.name }}</h2>
+        <div class="guest-facts">
+          {% if c.room %}<span class="fact">🛏 {{ t('room') }} <b>{{ c.room }}</b></span>{% endif %}
+          {% if c.phone %}<a class="fact" href="{{ c.tel }}" dir="ltr">📞 {{ c.phone }}</a>{% endif %}
+        </div>
+      </div>
+      {% if c.status == 'staying' %}
+      <span class="badge green">مقيم حتى {{ c.until }}</span>
+      {% elif c.status == 'left' %}
+      {# ردٌّ على من غادر لا يصله — صفحته أُقفلت. يُقال للموظف قبل أن يكتب. #}
+      <span class="badge amber">غادر — لن يصله الردّ</span>
+      {% endif %}
+      {% else %}
+      <h2>{{ t('message') }}</h2>
+      {% endif %}
     </div>
     <div class="card-body">
       {% if context %}
